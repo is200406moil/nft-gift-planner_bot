@@ -251,70 +251,77 @@ function App() {
       <DragDropContext onDragEnd={onDragEnd}>
         <Droppable droppableId="grid" direction="horizontal" type="cell">
           {(provided) => (
-            <div id="grid" className="grid" {...provided.droppableProps} ref={provided.innerRef}>
-              {grid.map((row, rowIndex) => (
-                <div key={rowIndex} className="row">
-                  {row.map((cell, colIndex) => {
-                    const index = rowIndex * 3 + colIndex;
-                    const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
-                    return (
-                      <Draggable key={index} draggableId={`cell-${index}`} index={index}>
-                        {(provided, snapshot) => (
-                          <div
-                            className={`cell ${snapshot.isDragging ? 'dragging' : ''}`}
-                            onClick={() => !cell && openModal(rowIndex, colIndex)}
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                          >
-                            {cell ? (
-                              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                                {cell.backdrop && (
-                                  <div
+            <div 
+              id="grid" 
+              className="grid" 
+              {...provided.droppableProps} 
+              ref={provided.innerRef}
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: 'repeat(3, 128px)', 
+                gap: 0 
+              }}
+            >
+              {grid.flat().map((cell, flatIndex) => {
+                const rowIndex = Math.floor(flatIndex / 3);
+                const colIndex = flatIndex % 3;
+                const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
+                return (
+                  <Draggable key={flatIndex} draggableId={`cell-${flatIndex}`} index={flatIndex}>
+                    {(provided, snapshot) => (
+                      <div
+                        className={`cell ${snapshot.isDragging ? 'dragging' : ''}`}
+                        onClick={() => openModal(rowIndex, colIndex)}
+                        ref={provided.innerRef}
+                        {...provided.draggableProps}
+                        {...provided.dragHandleProps}
+                      >
+                        {cell ? (
+                          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                            {cell.backdrop && (
+                              <div
+                                style={{
+                                  position: 'absolute',
+                                  inset: 0,
+                                  background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
+                                }}
+                              />
+                            )}
+                            {cell?.pattern && cell?.gift && (
+                              <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={flatIndex} />
+                            )}
+                            {cell?.gift && cell?.model && (
+                              <>
+                                {isPlaying && animationMode ? (
+                                  <TgsAnimation 
+                                    gift={cell.gift} 
+                                    model={cell.model}
+                                  />
+                                ) : (
+                                  <img
+                                    src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=64`}
+                                    alt="gift model"
                                     style={{
                                       position: 'absolute',
                                       inset: 0,
-                                      background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
+                                      width: '100%',
+                                      height: '100%',
+                                      objectFit: 'contain',
+                                      zIndex: 2,
                                     }}
                                   />
                                 )}
-                                {cell?.pattern && cell?.gift && (
-                                  <PatternRings gift={cell.gift} pattern={cell.pattern} />
-                                )}
-                                {cell?.gift && cell?.model && (
-                                  <>
-                                    {isPlaying && animationMode ? (
-                                      <TgsAnimation 
-                                        gift={cell.gift} 
-                                        model={cell.model}
-                                      />
-                                    ) : (
-                                      <img
-                                        src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=64`}
-                                        alt="gift model"
-                                        style={{
-                                          position: 'absolute',
-                                          inset: 0,
-                                          width: '100%',
-                                          height: '100%',
-                                          objectFit: 'contain',
-                                          zIndex: 2,
-                                        }}
-                                      />
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="empty-cell">Empty</span>
+                              </>
                             )}
                           </div>
+                        ) : (
+                          <span className="empty-cell">Empty</span>
                         )}
-                      </Draggable>
-                    );
-                  })}
-                </div>
-              ))}
+                      </div>
+                    )}
+                  </Draggable>
+                );
+              })}
               {provided.placeholder}
             </div>
           )}
@@ -360,12 +367,25 @@ const CellModal = ({
   initialData,
 }) => {
   const [link, setLink] = useState('');
-  const [gift, setGift] = useState(initialData?.gift || '');
-  const [model, setModel] = useState(initialData?.model || '');
-  const [backdrop, setBackdrop] = useState(initialData?.backdrop || null);
-  const [pattern, setPattern] = useState(initialData?.pattern || '');
+  const [gift, setGift] = useState('');
+  const [model, setModel] = useState('');
+  const [backdrop, setBackdrop] = useState(null);
+  const [pattern, setPattern] = useState('');
   const [models, setModels] = useState([]);
   const [patterns, setPatterns] = useState([]);
+
+  // Reset modal state when it opens or when initialData changes
+  useEffect(() => {
+    if (isOpen) {
+      setLink('');
+      setGift(initialData?.gift || '');
+      setModel(initialData?.model || '');
+      setBackdrop(initialData?.backdrop || null);
+      setPattern(initialData?.pattern || '');
+      setModels([]);
+      setPatterns([]);
+    }
+  }, [isOpen, initialData]);
 
   const loadModelsAndPatterns = async (selectedGift) => {
     const norm = normalizeGiftName(selectedGift);
@@ -495,8 +515,9 @@ const CellModal = ({
   );
 };
 
-const PatternRings = ({ gift, pattern }) => {
+const PatternRings = ({ gift, pattern, cellId }) => {
   const svgRef = useRef(null);
+  const uniqueId = `pattern-symbol-${cellId}`;
 
   useEffect(() => {
     if (!svgRef.current || !gift || !pattern) {
@@ -507,17 +528,15 @@ const PatternRings = ({ gift, pattern }) => {
     const svg = svgRef.current;
     svg.innerHTML = ''; // очищаем предыдущие символы
 
-    // Определяем <defs> если нужно (можно вынести выше)
-    if (!svg.querySelector('#pattern-symbol')) {
-      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-      const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-      img.setAttribute('id', 'pattern-symbol');
-      img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=64`);
-      img.setAttribute('width', '32');
-      img.setAttribute('height', '32');
-      defs.appendChild(img);
-      svg.appendChild(defs);
-    }
+    // Определяем <defs> с уникальным ID для каждой ячейки
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    img.setAttribute('id', uniqueId);
+    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=64`);
+    img.setAttribute('width', '32');
+    img.setAttribute('height', '32');
+    defs.appendChild(img);
+    svg.appendChild(defs);
 
     const centerX = 128;
     const centerY = 128;
@@ -539,13 +558,13 @@ const PatternRings = ({ gift, pattern }) => {
         const y = centerY + radius * Math.sin(angle) - symbolSize / 2;
 
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', '#pattern-symbol');
+        use.setAttribute('href', `#${uniqueId}`);
         use.setAttribute('x', x);
         use.setAttribute('y', y);
         svg.appendChild(use);
       }
     });
-  }, [gift, pattern]);
+  }, [gift, pattern, uniqueId]);
 
   return (
     <svg
