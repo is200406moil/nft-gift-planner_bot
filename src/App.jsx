@@ -15,7 +15,6 @@ import {
   rectSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import './App.css'; // Assume CSS file for styles
 import Modal from 'react-modal'; // For modals, install react-modal
 import html2canvas from 'html2canvas'; // For export, install html2canvas
@@ -63,15 +62,11 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
     attributes,
     listeners,
     setNodeRef,
-    transform,
-    transition,
     isDragging,
   } = useSortable({ id });
 
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition: transition || 'transform 0.15s ease',
-  };
+  // DO NOT apply transform - keep cell in original position during drag
+  // The ghost (DragOverlay) follows the cursor instead
 
   // Determine cell state classes
   const cellClasses = [
@@ -83,7 +78,6 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
   return (
     <div
       ref={setNodeRef}
-      style={style}
       className={cellClasses}
       onClick={() => onCellClick(rowIndex, colIndex)}
       {...attributes}
