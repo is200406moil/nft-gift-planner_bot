@@ -1,6 +1,21 @@
 // App.js - Main component for NFT Gift Planner
 import React, { useState, useEffect, useRef } from 'react';
-import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
+import { CSS } from '@dnd-kit/utilities';
 import './App.css'; // Assume CSS file for styles
 import Modal from 'react-modal'; // For modals, install react-modal
 import html2canvas from 'html2canvas'; // For export, install html2canvas
@@ -11,12 +26,84 @@ Modal.setAppElement('#root');
 
 const API_BASE = 'https://api.changes.tg';
 
-const fallbackGifts = ['Santa Hat', 'Signet Ring', 'Precious Peach', 'Plush Pepe', 'Spiced Wine', 'Jelly Bunny', 'Durov\'s Cap', 'Perfume Bottle', 'Eternal Rose', 'Berry Box', 'Vintage Cigar', 'Magic Potion', 'Kissed Frog', 'Hex Pot', 'Evil Eye', 'Sharp Tongue', 'Trapped Heart', 'Skull Flower', 'Scared Cat', 'Spy Agaric', 'Homemade Cake', 'Genie Lamp', 'Lunar Snake', 'Party Sparkler', 'Jester Hat', 'Witch Hat', 'Hanging Star', 'Love Candle', 'Cookie Heart', 'Desk Calendar', 'Jingle Bells', 'Snow Mittens', 'Voodoo Doll', 'Mad Pumpkin', 'Hypno Lollipop', 'B-Day Candle', 'Bunny Muffin', 'Astral Shard', 'Flying Broom', 'Crystal Ball', 'Eternal Candle', 'Swiss Watch', 'Ginger Cookie', 'Mini Oscar', 'Lol Pop', 'Ion Gem', 'Star Notepad', 'Loot Bag', 'Love Potion', 'Toy Bear', 'Diamond Ring', 'Sakura Flower', 'Sleigh Bell', 'Top Hat', 'Record Player', 'Winter Wreath', 'Snow Globe', 'Electric Skull', 'Tama Gadget', 'Candy Cane', 'Neko Helmet', 'Jack-in-the-Box', 'Easter Egg', 'Bonded Ring', 'Pet Snake', 'Snake Box', 'Xmas Stocking', 'Big Year', 'Holiday Drink', 'Gem Signet', 'Light Sword', 'Restless Jar', 'Nail Bracelet', 'Heroic Helmet', 'Bow Tie', 'Heart Locket', 'Lush Bouquet', 'Whip Cupcake', 'Joyful Bundle', 'Cupid Charm', 'Valentine Box', 'Snoop Dogg', 'Swag Bag', 'Snoop Cigar', 'Low Rider', 'Westside Sign', 'Stellar Rocket', 'Jolly Chimp', 'Moon Pendant', 'Ionic Dryer', 'Input Key', 'Mighty Arm', 'Artisan Brick', 'Clover Pin', 'Sky Stilettos', 'Fresh Socks', 'Happy Brownie', 'Ice Cream', 'Spring Basket', 'Instant Ramen', 'Faith Amulet', 'Mousse Cake', 'Bling Binky', 'Money Pot', 'Pretty Posy', 'Khabib\'s Papakha', 'UFC Strike', 'Victory Medal'];<grok-card data-id="e72d27" data-type="citation_card" data-plain-type="render_inline_citation" ></grok-card>
+const fallbackGifts = ['Santa Hat', 'Signet Ring', 'Precious Peach', 'Plush Pepe', 'Spiced Wine', 'Jelly Bunny', 'Durov\'s Cap', 'Perfume Bottle', 'Eternal Rose', 'Berry Box', 'Vintage Cigar', 'Magic Potion', 'Kissed Frog', 'Hex Pot', 'Evil Eye', 'Sharp Tongue', 'Trapped Heart', 'Skull Flower', 'Scared Cat', 'Spy Agaric', 'Homemade Cake', 'Genie Lamp', 'Lunar Snake', 'Party Sparkler', 'Jester Hat', 'Witch Hat', 'Hanging Star', 'Love Candle', 'Cookie Heart', 'Desk Calendar', 'Jingle Bells', 'Snow Mittens', 'Voodoo Doll', 'Mad Pumpkin', 'Hypno Lollipop', 'B-Day Candle', 'Bunny Muffin', 'Astral Shard', 'Flying Broom', 'Crystal Ball', 'Eternal Candle', 'Swiss Watch', 'Ginger Cookie', 'Mini Oscar', 'Lol Pop', 'Ion Gem', 'Star Notepad', 'Loot Bag', 'Love Potion', 'Toy Bear', 'Diamond Ring', 'Sakura Flower', 'Sleigh Bell', 'Top Hat', 'Record Player', 'Winter Wreath', 'Snow Globe', 'Electric Skull', 'Tama Gadget', 'Candy Cane', 'Neko Helmet', 'Jack-in-the-Box', 'Easter Egg', 'Bonded Ring', 'Pet Snake', 'Snake Box', 'Xmas Stocking', 'Big Year', 'Holiday Drink', 'Gem Signet', 'Light Sword', 'Restless Jar', 'Nail Bracelet', 'Heroic Helmet', 'Bow Tie', 'Heart Locket', 'Lush Bouquet', 'Whip Cupcake', 'Joyful Bundle', 'Cupid Charm', 'Valentine Box', 'Snoop Dogg', 'Swag Bag', 'Snoop Cigar', 'Low Rider', 'Westside Sign', 'Stellar Rocket', 'Jolly Chimp', 'Moon Pendant', 'Ionic Dryer', 'Input Key', 'Mighty Arm', 'Artisan Brick', 'Clover Pin', 'Sky Stilettos', 'Fresh Socks', 'Happy Brownie', 'Ice Cream', 'Spring Basket', 'Instant Ramen', 'Faith Amulet', 'Mousse Cake', 'Bling Binky', 'Money Pot', 'Pretty Posy', 'Khabib\'s Papakha', 'UFC Strike', 'Victory Medal'];
 
 
 function normalizeGiftName(name) {
   return name.toLowerCase().replace(/ /g, '-');
 }
+
+// SortableCell component using @dnd-kit
+const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    transform,
+    transition,
+    isDragging,
+  } = useSortable({ id });
+
+  const style = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.5 : 1,
+    zIndex: isDragging ? 1000 : 1,
+  };
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={`cell ${isDragging ? 'dragging' : ''}`}
+      onClick={() => onCellClick(rowIndex, colIndex)}
+      {...attributes}
+      {...listeners}
+    >
+      {cell ? (
+        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+          {cell.backdrop && (
+            <div
+              style={{
+                position: 'absolute',
+                inset: 0,
+                background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
+              }}
+            />
+          )}
+          {cell?.pattern && cell?.gift && (
+            <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
+          )}
+          {cell?.gift && cell?.model && (
+            <>
+              {isPlaying && animationMode ? (
+                <TgsAnimation 
+                  gift={cell.gift} 
+                  model={cell.model}
+                />
+              ) : (
+                <img
+                  src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=256`}
+                  alt="gift model"
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: '100%',
+                    height: '100%',
+                    objectFit: 'contain',
+                    zIndex: 2,
+                  }}
+                />
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <span className="empty-cell">Empty</span>
+      )}
+    </div>
+  );
+};
 
 function App() {
   const [rows, setRows] = useState(3); // Start with 3 rows
@@ -31,6 +118,21 @@ function App() {
   const [patternsCache, setPatternsCache] = useState({});
   const [animationMode, setAnimationMode] = useState(false);
   const [playingAnimations, setPlayingAnimations] = useState({});
+  const [activeId, setActiveId] = useState(null);
+
+  // Generate unique IDs for cells
+  const cellIds = grid.flat().map((_, index) => `cell-${index}`);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before starting drag
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     loadInitialData();
@@ -78,7 +180,7 @@ function App() {
           cache: 'no-store',
           mode: 'cors',
           headers: {
-            'Connection': 'close',          // ← отключает QUIC/HTTP3
+            'Connection': 'close',
             'User-Agent': 'NFT-Gift-Planner/1.0'
           }
         });
@@ -139,16 +241,25 @@ function App() {
     return null;
   };
 
-  const onDragEnd = (result) => {
-    const { source, destination } = result;
-    if (!destination) return;
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+  };
 
-    const sourceRow = Math.floor(source.index / 3);
-    const sourceCol = source.index % 3;
-    const destRow = Math.floor(destination.index / 3);
-    const destCol = destination.index % 3;
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    setActiveId(null);
+    
+    if (!over || active.id === over.id) return;
 
-    // Create a deep copy of the grid to avoid mutation issues
+    const activeIndex = parseInt(active.id.replace('cell-', ''), 10);
+    const overIndex = parseInt(over.id.replace('cell-', ''), 10);
+
+    const sourceRow = Math.floor(activeIndex / 3);
+    const sourceCol = activeIndex % 3;
+    const destRow = Math.floor(overIndex / 3);
+    const destCol = overIndex % 3;
+
+    // Swap cells
     const newGrid = grid.map(row => [...row]);
     const temp = newGrid[destRow][destCol];
     newGrid[destRow][destCol] = newGrid[sourceRow][sourceCol];
@@ -207,8 +318,17 @@ function App() {
     });
   };
 
+  // Get the active cell data for overlay
+  const getActiveCellData = () => {
+    if (!activeId) return null;
+    const activeIndex = parseInt(activeId.replace('cell-', ''), 10);
+    const rowIndex = Math.floor(activeIndex / 3);
+    const colIndex = activeIndex % 3;
+    return grid[rowIndex]?.[colIndex];
+  };
+
   if (loading) {
-    return <div className="splash">Loading...</div>; // Add animation in CSS
+    return <div className="splash">Loading...</div>;
   }
 
   return (
@@ -248,81 +368,73 @@ function App() {
         <button onClick={resetGrid}>Сброс</button>
         <button onClick={exportGrid}>Экспорт</button>
       </div>
-      <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable droppableId="grid" direction="horizontal" type="cell">
-          {(provided) => (
-            <div 
-              id="grid" 
-              className="grid-container" 
-              {...provided.droppableProps} 
-              ref={provided.innerRef}
-            >
-              {grid.flat().map((cell, flatIndex) => {
-                const rowIndex = Math.floor(flatIndex / 3);
-                const colIndex = flatIndex % 3;
-                const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
-                return (
-                  <Draggable key={flatIndex} draggableId={`cell-${flatIndex}`} index={flatIndex}>
-                    {(provided, snapshot) => (
+      
+      <DndContext
+        sensors={sensors}
+        collisionDetection={closestCenter}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        <SortableContext items={cellIds} strategy={rectSortingStrategy}>
+          <div id="grid" className="grid-container">
+            {grid.flat().map((cell, flatIndex) => {
+              const rowIndex = Math.floor(flatIndex / 3);
+              const colIndex = flatIndex % 3;
+              const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
+              return (
+                <SortableCell
+                  key={`cell-${flatIndex}`}
+                  id={`cell-${flatIndex}`}
+                  cell={cell}
+                  rowIndex={rowIndex}
+                  colIndex={colIndex}
+                  isPlaying={isPlaying}
+                  animationMode={animationMode}
+                  onCellClick={openModal}
+                />
+              );
+            })}
+          </div>
+        </SortableContext>
+        <DragOverlay>
+          {activeId ? (
+            <div className="cell dragging" style={{ opacity: 0.8 }}>
+              {(() => {
+                const cellData = getActiveCellData();
+                return cellData ? (
+                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                    {cellData.backdrop && (
                       <div
-                        className={`cell ${snapshot.isDragging ? 'dragging' : ''}`}
-                        onClick={() => openModal(rowIndex, colIndex)}
-                        ref={provided.innerRef}
-                        {...provided.draggableProps}
-                        {...provided.dragHandleProps}
-                        style={provided.draggableProps.style}
-                      >
-                        {cell ? (
-                          <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                            {cell.backdrop && (
-                              <div
-                                style={{
-                                  position: 'absolute',
-                                  inset: 0,
-                                  background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
-                                }}
-                              />
-                            )}
-                            {cell?.pattern && cell?.gift && (
-                              <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={flatIndex} />
-                            )}
-                            {cell?.gift && cell?.model && (
-                              <>
-                                {isPlaying && animationMode ? (
-                                  <TgsAnimation 
-                                    gift={cell.gift} 
-                                    model={cell.model}
-                                  />
-                                ) : (
-                                  <img
-                                    src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=128`}
-                                    alt="gift model"
-                                    style={{
-                                      position: 'absolute',
-                                      inset: 0,
-                                      width: '100%',
-                                      height: '100%',
-                                      objectFit: 'contain',
-                                      zIndex: 2,
-                                    }}
-                                  />
-                                )}
-                              </>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="empty-cell">Empty</span>
-                        )}
-                      </div>
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          background: `linear-gradient(to bottom, ${cellData.backdrop.hex?.edgeColor || '#000'}, ${cellData.backdrop.hex?.centerColor || '#333'})`,
+                        }}
+                      />
                     )}
-                  </Draggable>
+                    {cellData?.gift && cellData?.model && (
+                      <img
+                        src={`${API_BASE}/model/${normalizeGiftName(cellData.gift)}/${cellData.model}.png?size=256`}
+                        alt="gift model"
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          width: '100%',
+                          height: '100%',
+                          objectFit: 'contain',
+                          zIndex: 2,
+                        }}
+                      />
+                    )}
+                  </div>
+                ) : (
+                  <span className="empty-cell">Empty</span>
                 );
-              })}
-              {provided.placeholder}
+              })()}
             </div>
-          )}
-        </Droppable>
-      </DragDropContext>
+          ) : null}
+        </DragOverlay>
+      </DndContext>
 
       <CellModal
         isOpen={modalIsOpen}
@@ -517,18 +629,17 @@ const PatternRings = ({ gift, pattern, cellId }) => {
 
   useEffect(() => {
     if (!svgRef.current || !gift || !pattern) {
-      if (svgRef.current) svgRef.current.innerHTML = '';  // очистка если нет паттерна
+      if (svgRef.current) svgRef.current.innerHTML = '';
       return;
     }
 
     const svg = svgRef.current;
-    svg.innerHTML = ''; // очищаем предыдущие символы
+    svg.innerHTML = '';
 
-    // Определяем <defs> с уникальным ID для каждой ячейки
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     img.setAttribute('id', uniqueId);
-    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=128`);
+    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=256`);
     img.setAttribute('width', '32');
     img.setAttribute('height', '32');
     defs.appendChild(img);
@@ -537,15 +648,12 @@ const PatternRings = ({ gift, pattern, cellId }) => {
     const centerX = 128;
     const centerY = 128;
     const symbolSize = 32;
-    const rings = [50, 90, 130, 170]; // радиусы колец — регулируй расстояния
-    const baseAngleStep = 30;          // базовый шаг угла — чем меньше, тем плотнее
+    const rings = [50, 90, 130, 170];
+    const baseAngleStep = 30;
 
     rings.forEach((radius, ringIndex) => {
-      // Шахматный сдвиг: на чётных кольцах смещаем на половину шага
       const offset = ringIndex % 2 === 0 ? 0 : baseAngleStep / 2;
-
-      // Количество символов на кольце — больше на внешних
-      const numSymbols = Math.floor((2 * Math.PI * radius) / (symbolSize * 1.4)); // расстояние между символами ~1.4×размер
+      const numSymbols = Math.floor((2 * Math.PI * radius) / (symbolSize * 1.4));
       const angleStep = 360 / numSymbols;
 
       for (let i = 0; i < numSymbols; i++) {
@@ -573,7 +681,7 @@ const PatternRings = ({ gift, pattern, cellId }) => {
         inset: 0,
         zIndex: 1,
         pointerEvents: 'none',
-        opacity: 0.18, // общая прозрачность колец
+        opacity: 0.18,
       }}
     />
   );
@@ -590,30 +698,22 @@ const TgsAnimation = ({ gift, model }) => {
       if (!containerRef.current) return;
 
       try {
-        // Clean up previous animation if exists
         if (animationRef.current) {
           animationRef.current.destroy();
           animationRef.current = null;
         }
 
-        // Load TGS format from API (default format, gzipped Lottie JSON)
         const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
         
         const response = await fetch(tgsUrl);
         if (!response.ok) throw new Error(`Failed to load animation: ${response.status} ${response.statusText}`);
         
-        // Get the TGS file as ArrayBuffer
         const arrayBuffer = await response.arrayBuffer();
-        
-        // Decompress the gzipped data
         const decompressed = pako.inflate(new Uint8Array(arrayBuffer), { to: 'string' });
-        
-        // Parse the decompressed JSON
         const animationData = JSON.parse(decompressed);
 
         if (!isMounted || !containerRef.current) return;
 
-        // Create lottie animation
         animationRef.current = lottie.loadAnimation({
           container: containerRef.current,
           renderer: 'svg',
@@ -630,14 +730,11 @@ const TgsAnimation = ({ gift, model }) => {
       } catch (error) {
         console.error(`Failed to load animation for ${gift}/${model}:`, error);
         
-        // Fallback to static image if animation fails
         if (isMounted && containerRef.current) {
-          // Clear container safely
           containerRef.current.textContent = '';
           
-          // Create img element safely to avoid XSS
           const img = document.createElement('img');
-          img.src = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=128`;
+          img.src = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=256`;
           img.alt = 'gift model';
           img.style.width = '100%';
           img.style.height = '100%';
