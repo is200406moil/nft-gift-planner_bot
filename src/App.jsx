@@ -252,69 +252,67 @@ function App() {
         <Droppable droppableId="grid" direction="horizontal" type="cell">
           {(provided) => (
             <div id="grid" className="grid" {...provided.droppableProps} ref={provided.innerRef}>
-              {grid.map((row, rowIndex) => (
-                <div key={rowIndex} className="row">
-                  {row.map((cell, colIndex) => {
-                    const index = rowIndex * 3 + colIndex;
-                    const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
-                    return (
-                      <Draggable key={index} draggableId={`cell-${index}`} index={index}>
-                        {(provided, snapshot) => (
-                          <div
-                            className={`cell ${snapshot.isDragging ? 'dragging' : ''}`}
-                            onClick={() => !cell && openModal(rowIndex, colIndex)}
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                          >
-                            {cell ? (
-                              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                                {cell.backdrop && (
-                                  <div
-                                    style={{
-                                      position: 'absolute',
-                                      inset: 0,
-                                      background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
-                                    }}
-                                  />
-                                )}
-                                {cell?.pattern && cell?.gift && (
-                                  <PatternRings gift={cell.gift} pattern={cell.pattern} />
-                                )}
-                                {cell?.gift && cell?.model && (
-                                  <>
-                                    {isPlaying && animationMode ? (
-                                      <TgsAnimation 
-                                        gift={cell.gift} 
-                                        model={cell.model}
-                                      />
-                                    ) : (
-                                      <img
-                                        src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=64`}
-                                        alt="gift model"
-                                        style={{
-                                          position: 'absolute',
-                                          inset: 0,
-                                          width: '100%',
-                                          height: '100%',
-                                          objectFit: 'contain',
-                                          zIndex: 2,
-                                        }}
-                                      />
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="empty-cell">Empty</span>
-                            )}
-                          </div>
-                        )}
-                      </Draggable>
-                    );
-                  })}
-                </div>
-              ))}
+              {grid.flatMap((row, rowIndex) =>
+                row.map((cell, colIndex) => {
+                  const index = rowIndex * 3 + colIndex;
+                  const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
+                  return (
+                    <Draggable key={index} draggableId={`cell-${index}`} index={index}>
+                      {(provided, snapshot) => (
+                        <div
+                          className={`cell ${snapshot.isDragging ? 'dragging' : ''}`}
+                          onClick={() => openModal(rowIndex, colIndex)}
+                          ref={provided.innerRef}
+                          {...provided.draggableProps}
+                          {...provided.dragHandleProps}
+                        >
+                          {cell ? (
+                            <div style={{ position: 'relative', width: '100%', height: '100%' }}>
+                              {cell.backdrop && (
+                                <div
+                                  style={{
+                                    position: 'absolute',
+                                    inset: 0,
+                                    background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
+                                  }}
+                                />
+                              )}
+                              {cell?.pattern && cell?.gift && (
+                                <PatternRings gift={cell.gift} pattern={cell.pattern} />
+                              )}
+                              {cell?.gift && cell?.model && (
+                                <>
+                                  {isPlaying && animationMode ? (
+                                    <TgsAnimation 
+                                      gift={cell.gift} 
+                                      model={cell.model}
+                                    />
+                                  ) : (
+                                    <img
+                                      src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=64`}
+                                      alt="gift model"
+                                      style={{
+                                        position: 'absolute',
+                                        inset: 0,
+                                        width: '100%',
+                                        height: '100%',
+                                        objectFit: 'contain',
+                                        zIndex: 2,
+                                      }}
+                                    />
+                                  )}
+                                </>
+                              )}
+                            </div>
+                          ) : (
+                            <span className="empty-cell">Empty</span>
+                          )}
+                        </div>
+                      )}
+                    </Draggable>
+                  );
+                })
+              )}
               {provided.placeholder}
             </div>
           )}
@@ -366,6 +364,34 @@ const CellModal = ({
   const [pattern, setPattern] = useState(initialData?.pattern || '');
   const [models, setModels] = useState([]);
   const [patterns, setPatterns] = useState([]);
+
+  // Reset modal state whenever it is opened for a different cell
+  useEffect(() => {
+    if (!isOpen) return;
+
+    setLink('');
+
+    if (initialData) {
+      setGift(initialData.gift || '');
+      setModel(initialData.model || '');
+      setBackdrop(initialData.backdrop || null);
+      setPattern(initialData.pattern || '');
+      if (initialData.gift) {
+        loadModelsAndPatterns(initialData.gift);
+      } else {
+        setModels([]);
+        setPatterns([]);
+      }
+    } else {
+      setGift('');
+      setModel('');
+      setBackdrop(null);
+      setPattern('');
+      setModels([]);
+      setPatterns([]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialData]);
 
   const loadModelsAndPatterns = async (selectedGift) => {
     const norm = normalizeGiftName(selectedGift);
