@@ -253,14 +253,9 @@ function App() {
           {(provided) => (
             <div 
               id="grid" 
-              className="grid" 
+              className="grid-container" 
               {...provided.droppableProps} 
               ref={provided.innerRef}
-              style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(3, 128px)', 
-                gap: 0 
-              }}
             >
               {grid.flat().map((cell, flatIndex) => {
                 const rowIndex = Math.floor(flatIndex / 3);
@@ -275,6 +270,7 @@ function App() {
                         ref={provided.innerRef}
                         {...provided.draggableProps}
                         {...provided.dragHandleProps}
+                        style={provided.draggableProps.style}
                       >
                         {cell ? (
                           <div style={{ position: 'relative', width: '100%', height: '100%' }}>
@@ -299,7 +295,7 @@ function App() {
                                   />
                                 ) : (
                                   <img
-                                    src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=64`}
+                                    src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=128`}
                                     alt="gift model"
                                     style={{
                                       position: 'absolute',
@@ -373,6 +369,7 @@ const CellModal = ({
   const [pattern, setPattern] = useState('');
   const [models, setModels] = useState([]);
   const [patterns, setPatterns] = useState([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
 
   // Reset modal state when it opens or when initialData changes
   useEffect(() => {
@@ -384,7 +381,14 @@ const CellModal = ({
       setPattern(initialData?.pattern || '');
       setModels([]);
       setPatterns([]);
+      setIsInitialLoad(true);
+      
+      // Load models and patterns for existing gift without resetting values
+      if (initialData?.gift) {
+        loadModelsAndPatterns(initialData.gift);
+      }
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen, initialData]);
 
   const loadModelsAndPatterns = async (selectedGift) => {
@@ -406,36 +410,29 @@ const CellModal = ({
     setPatterns(patternsData);
   };
 
-  useEffect(() => {
-    if (gift) {
-      // При смене подарка сбрасываем всё зависимое
-      setModel('');
-      setPattern('');
-      setBackdrop(null);
-  
-      // Сбрасываем локальные списки (если они есть)
+  // Handle gift changes - only reset dependent values when user manually changes gift
+  const handleGiftChange = (newGift) => {
+    if (newGift !== gift) {
+      setGift(newGift);
+      // Reset dependent values only when user changes gift (not on initial load)
+      if (!isInitialLoad) {
+        setModel('');
+        setPattern('');
+        setBackdrop(null);
+      }
+      setIsInitialLoad(false);
       setModels([]);
       setPatterns([]);
-  
-      // Загружаем новые списки для текущего gift
-      loadModelsAndPatterns(gift); // твоя существующая функция
-  
-      // Если хочешь — можно сбросить и backdrops здесь, но обычно они общие
-    } else {
-      // Если подарок очищен — тоже сбрасываем
-      setModel('');
-      setPattern('');
-      setBackdrop(null);
-      setModels([]);
-      setPatterns([]);
+      if (newGift) {
+        loadModelsAndPatterns(newGift);
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gift]);
+  };
 
   const handleLink = () => {
     const parsed = parseLink(link);
     if (parsed) {
-      setGift(parsed);
+      handleGiftChange(parsed);
     }
   };
 
@@ -445,10 +442,16 @@ const CellModal = ({
 
   const pasteCell = () => {
     if (copiedCell) {
+      // When pasting, we want to keep the pasted values, so use isInitialLoad-like behavior
       setGift(copiedCell.gift);
       setModel(copiedCell.model);
       setBackdrop(copiedCell.backdrop);
       setPattern(copiedCell.pattern);
+      setModels([]);
+      setPatterns([]);
+      if (copiedCell.gift) {
+        loadModelsAndPatterns(copiedCell.gift);
+      }
     }
   };
 
@@ -462,14 +465,7 @@ const CellModal = ({
       <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="t.me/nft/Name-123" />
       <button onClick={handleLink}>Распознать ссылку</button>
 
-      <select value={gift} onChange={(e) => {
-        setModel('');
-        setPattern('');
-        setBackdrop(null);
-        setModels([]);
-        setPatterns([]);
-        setGift(e.target.value);  // после сброса устанавливаем новый gift
-      }}>
+      <select value={gift} onChange={(e) => handleGiftChange(e.target.value)}>
         <option value="">Выберите подарок</option>
         {gifts.map((g) => <option key={g} value={g}>{g}</option>)}
       </select>
@@ -532,7 +528,7 @@ const PatternRings = ({ gift, pattern, cellId }) => {
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     img.setAttribute('id', uniqueId);
-    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=64`);
+    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=128`);
     img.setAttribute('width', '32');
     img.setAttribute('height', '32');
     defs.appendChild(img);
@@ -641,7 +637,7 @@ const TgsAnimation = ({ gift, model }) => {
           
           // Create img element safely to avoid XSS
           const img = document.createElement('img');
-          img.src = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=64`;
+          img.src = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=128`;
           img.alt = 'gift model';
           img.style.width = '100%';
           img.style.height = '100%';
