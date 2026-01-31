@@ -26,15 +26,39 @@ Modal.setAppElement('#root');
 
 const API_BASE = 'https://api.changes.tg';
 
-const fallbackGifts = ['Santa Hat', 'Signet Ring', 'Precious Peach', 'Plush Pepe', 'Spiced Wine', 'Jelly Bunny', 'Durov\'s Cap', 'Perfume Bottle', 'Eternal Rose', 'Berry Box', 'Vintage Cigar', 'Magic Potion', 'Kissed Frog', 'Hex Pot', 'Evil Eye', 'Sharp Tongue', 'Trapped Heart', 'Skull Flower', 'Scared Cat', 'Spy Agaric', 'Homemade Cake', 'Genie Lamp', 'Lunar Snake', 'Party Sparkler', 'Jester Hat', 'Witch Hat', 'Hanging Star', 'Love Candle', 'Cookie Heart', 'Desk Calendar', 'Jingle Bells', 'Snow Mittens', 'Voodoo Doll', 'Mad Pumpkin', 'Hypno Lollipop', 'B-Day Candle', 'Bunny Muffin', 'Astral Shard', 'Flying Broom', 'Crystal Ball', 'Eternal Candle', 'Swiss Watch', 'Ginger Cookie', 'Mini Oscar', 'Lol Pop', 'Ion Gem', 'Star Notepad', 'Loot Bag', 'Love Potion', 'Toy Bear', 'Diamond Ring', 'Sakura Flower', 'Sleigh Bell', 'Top Hat', 'Record Player', 'Winter Wreath', 'Snow Globe', 'Electric Skull', 'Tama Gadget', 'Candy Cane', 'Neko Helmet', 'Jack-in-the-Box', 'Easter Egg', 'Bonded Ring', 'Pet Snake', 'Snake Box', 'Xmas Stocking', 'Big Year', 'Holiday Drink', 'Gem Signet', 'Light Sword', 'Restless Jar', 'Nail Bracelet', 'Heroic Helmet', 'Bow Tie', 'Heart Locket', 'Lush Bouquet', 'Whip Cupcake', 'Joyful Bundle', 'Cupid Charm', 'Valentine Box', 'Snoop Dogg', 'Swag Bag', 'Snoop Cigar', 'Low Rider', 'Westside Sign', 'Stellar Rocket', 'Jolly Chimp', 'Moon Pendant', 'Ionic Dryer', 'Input Key', 'Mighty Arm', 'Artisan Brick', 'Clover Pin', 'Sky Stilettos', 'Fresh Socks', 'Happy Brownie', 'Ice Cream', 'Spring Basket', 'Instant Ramen', 'Faith Amulet', 'Mousse Cake', 'Bling Binky', 'Money Pot', 'Pretty Posy', 'Khabib\'s Papakha', 'UFC Strike', 'Victory Medal'];
+// Animation cache for prefetched TGS data
+const animationCache = new Map();
 
+// Prefetch animation data for instant playback
+async function prefetchAnimation(gift, model) {
+  const cacheKey = `${gift}/${model}`;
+  if (animationCache.has(cacheKey)) {
+    return animationCache.get(cacheKey);
+  }
+  
+  try {
+    const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+    const response = await fetch(tgsUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const decompressed = pako.inflate(new Uint8Array(arrayBuffer), { to: 'string' });
+    const animationData = JSON.parse(decompressed);
+    
+    animationCache.set(cacheKey, animationData);
+    return animationData;
+  } catch (error) {
+    console.warn(`Failed to prefetch animation for ${cacheKey}:`, error);
+    return null;
+  }
+}
 
 function normalizeGiftName(name) {
   return name.toLowerCase().replace(/ /g, '-');
 }
 
 // SortableCell component using @dnd-kit
-const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick }) => {
+const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver }) => {
   const {
     attributes,
     listeners,
@@ -46,16 +70,21 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
 
   const style = {
     transform: CSS.Transform.toString(transform),
-    transition,
-    opacity: isDragging ? 0.5 : 1,
-    zIndex: isDragging ? 1000 : 1,
+    transition: transition || 'transform 0.15s ease',
   };
+
+  // Determine cell state classes
+  const cellClasses = [
+    'cell',
+    isDragging ? 'cell-dragging' : '',
+    isOver && !isDragging ? 'cell-drop-target' : '',
+  ].filter(Boolean).join(' ');
 
   return (
     <div
       ref={setNodeRef}
       style={style}
-      className={`cell ${isDragging ? 'dragging' : ''}`}
+      className={cellClasses}
       onClick={() => onCellClick(rowIndex, colIndex)}
       {...attributes}
       {...listeners}
@@ -119,6 +148,7 @@ function App() {
   const [animationMode, setAnimationMode] = useState(false);
   const [playingAnimations, setPlayingAnimations] = useState({});
   const [activeId, setActiveId] = useState(null);
+  const [overId, setOverId] = useState(null);
 
   // Generate unique IDs for cells
   const cellIds = grid.flat().map((_, index) => `cell-${index}`);
@@ -141,26 +171,13 @@ function App() {
 
   const loadInitialData = async () => {
     try {
-      const giftsData = await safeFetch('/gifts', fallbackGifts);
+      // Load gifts from API - no hardcoded fallback
+      const giftsData = await safeFetch('/gifts', []);
       setGifts(giftsData);
-      sessionStorage.setItem('gifts', JSON.stringify(giftsData));
 
-      const backdropsData = await safeFetch('/backdrops', []); // General backdrops
+      // Load backdrops from API
+      const backdropsData = await safeFetch('/backdrops', []);
       setBackdrops(backdropsData);
-      sessionStorage.setItem('backdrops', JSON.stringify(backdropsData));
-
-      // Pre-fetch models for first 5 gifts
-      for (let i = 0; i < 5 && i < giftsData.length; i++) {
-        const gift = giftsData[i];
-        const norm = normalizeGiftName(gift);
-        const models = await safeFetch(`/models/${norm}?sorted`, []);
-        setModelsCache((prev) => ({ ...prev, [gift]: models }));
-        sessionStorage.setItem(`models_${gift}`, JSON.stringify(models));
-
-        const patterns = await safeFetch(`/patterns/${norm}?sorted`, []);
-        setPatternsCache((prev) => ({ ...prev, [gift]: patterns }));
-        sessionStorage.setItem(`patterns_${gift}`, JSON.stringify(patterns));
-      }
 
       setLoading(false);
     } catch {
@@ -245,9 +262,15 @@ function App() {
     setActiveId(event.active.id);
   };
 
+  const handleDragOver = (event) => {
+    const { over } = event;
+    setOverId(over?.id || null);
+  };
+
   const handleDragEnd = (event) => {
     const { active, over } = event;
     setActiveId(null);
+    setOverId(null);
     
     if (!over || active.id === over.id) return;
 
@@ -265,6 +288,11 @@ function App() {
     newGrid[destRow][destCol] = newGrid[sourceRow][sourceCol];
     newGrid[sourceRow][sourceCol] = temp;
     setGrid(newGrid);
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setOverId(null);
   };
 
   const toggleAnimationMode = () => {
@@ -373,7 +401,9 @@ function App() {
         sensors={sensors}
         collisionDetection={closestCenter}
         onDragStart={handleDragStart}
+        onDragOver={handleDragOver}
         onDragEnd={handleDragEnd}
+        onDragCancel={handleDragCancel}
       >
         <SortableContext items={cellIds} strategy={rectSortingStrategy}>
           <div id="grid" className="grid-container">
@@ -381,24 +411,26 @@ function App() {
               const rowIndex = Math.floor(flatIndex / 3);
               const colIndex = flatIndex % 3;
               const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
+              const cellId = `cell-${flatIndex}`;
               return (
                 <SortableCell
-                  key={`cell-${flatIndex}`}
-                  id={`cell-${flatIndex}`}
+                  key={cellId}
+                  id={cellId}
                   cell={cell}
                   rowIndex={rowIndex}
                   colIndex={colIndex}
                   isPlaying={isPlaying}
                   animationMode={animationMode}
                   onCellClick={openModal}
+                  isOver={overId === cellId && activeId !== cellId}
                 />
               );
             })}
           </div>
         </SortableContext>
-        <DragOverlay>
+        <DragOverlay dropAnimation={null}>
           {activeId ? (
-            <div className="cell dragging" style={{ opacity: 0.8 }}>
+            <div className="cell cell-overlay">
               {(() => {
                 const cellData = getActiveCellData();
                 return cellData ? (
@@ -584,7 +616,14 @@ const CellModal = ({
 
       {gift && (
         <>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
+          <select value={model} onChange={(e) => {
+            const newModel = e.target.value;
+            setModel(newModel);
+            // Prefetch animation when model is selected for instant playback later
+            if (newModel && gift) {
+              prefetchAnimation(gift, newModel);
+            }
+          }}>
             <option value="">Выберите модель</option>
             {models.map((m) => (
               <option key={m.name} value={m.name}>{m.name} ({(m.rarityPermille / 10).toFixed(1)}‰)</option>
@@ -703,14 +742,23 @@ const TgsAnimation = ({ gift, model }) => {
           animationRef.current = null;
         }
 
-        const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+        // Try to get cached animation data first (instant playback)
+        const cacheKey = `${gift}/${model}`;
+        let animationData = animationCache.get(cacheKey);
         
-        const response = await fetch(tgsUrl);
-        if (!response.ok) throw new Error(`Failed to load animation: ${response.status} ${response.statusText}`);
-        
-        const arrayBuffer = await response.arrayBuffer();
-        const decompressed = pako.inflate(new Uint8Array(arrayBuffer), { to: 'string' });
-        const animationData = JSON.parse(decompressed);
+        if (!animationData) {
+          // Not cached, fetch and cache it
+          const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+          const response = await fetch(tgsUrl);
+          if (!response.ok) throw new Error(`Failed to load animation: ${response.status} ${response.statusText}`);
+          
+          const arrayBuffer = await response.arrayBuffer();
+          const decompressed = pako.inflate(new Uint8Array(arrayBuffer), { to: 'string' });
+          animationData = JSON.parse(decompressed);
+          
+          // Cache for future use
+          animationCache.set(cacheKey, animationData);
+        }
 
         if (!isMounted || !containerRef.current) return;
 
