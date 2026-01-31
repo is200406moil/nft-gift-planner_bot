@@ -1,0 +1,261 @@
+/* App.css */
+:root {
+  --bg-color: #ffffff;
+  --text-color: #213547;
+  --border-color: #ccc;
+  --cell-bg: #f9f9f9;
+  --button-bg: #f9f9f9;
+  --button-hover: #646cff;
+  --modal-bg: #ffffff;
+  --empty-cell-color: #999;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-color: #242424;
+    --text-color: rgba(255, 255, 255, 0.87);
+    --border-color: #444;
+    --cell-bg: #1a1a1a;
+    --button-bg: #1a1a1a;
+    --button-hover: #535bf2;
+    --modal-bg: #2a2a2a;
+    --empty-cell-color: #666;
+  }
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  min-height: 100vh;
+}
+
+.controls {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+}
+
+.animation-toggle-container {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 5px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--cell-bg);
+}
+
+.animation-toggle-container label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.animation-toggle-container input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.animate-all-button {
+  background-color: var(--button-hover) !important;
+  color: white !important;
+  font-weight: 600;
+  padding: 0.6em 1.5em;
+}
+
+.animate-all-button:hover:not(:disabled) {
+  background-color: #535bf2 !important;
+  transform: scale(1.05);
+}
+
+.animate-all-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  background-color: #888 !important;
+}
+
+.tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background-color: var(--button-hover);
+  color: white;
+  font-size: 12px;
+  font-weight: bold;
+  cursor: help;
+  user-select: none;
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.row {
+  display: flex;
+  gap: 0;
+}
+
+.cell {
+  width: 128px;
+  height: 128px;
+  border: 2px solid var(--border-color);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  position: relative;
+  background-color: var(--cell-bg);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.cell:hover {
+  transform: scale(1.02);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.cell.dragging {
+  opacity: 0.5;
+  transform: scale(1.05);
+  box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
+}
+
+.empty-cell {
+  color: var(--empty-cell-color);
+  font-size: 14px;
+}
+
+.splash {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 24px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* Modal Styles */
+.ReactModal__Overlay {
+  z-index: 1000 !important;
+  background-color: rgba(0, 0, 0, 0.75) !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+.ReactModal__Content {
+  position: relative !important;
+  top: auto !important;
+  left: auto !important;
+  right: auto !important;
+  bottom: auto !important;
+  border: 1px solid var(--border-color) !important;
+  background: var(--modal-bg) !important;
+  overflow: auto !important;
+  border-radius: 12px !important;
+  outline: none !important;
+  padding: 30px !important;
+  max-width: 500px !important;
+  width: 90% !important;
+  max-height: 90vh !important;
+}
+
+.ReactModal__Content h2 {
+  margin-top: 0;
+  margin-bottom: 20px;
+  color: var(--text-color);
+}
+
+.ReactModal__Content input,
+.ReactModal__Content select {
+  width: 100%;
+  padding: 10px;
+  margin-bottom: 15px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background-color: var(--cell-bg);
+  color: var(--text-color);
+  font-size: 14px;
+  box-sizing: border-box;
+}
+
+.ReactModal__Content button {
+  margin: 5px;
+  padding: 10px 20px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background-color: var(--button-bg);
+  color: var(--text-color);
+  cursor: pointer;
+  font-size: 14px;
+  transition: border-color 0.25s, background-color 0.25s;
+}
+
+.ReactModal__Content button:hover {
+  border-color: var(--button-hover);
+  background-color: var(--button-hover);
+  color: white;
+}
+
+/* Button styles */
+button {
+  border-radius: 8px;
+  border: 1px solid transparent;
+  padding: 0.6em 1.2em;
+  font-size: 1em;
+  font-weight: 500;
+  font-family: inherit;
+  background-color: var(--button-bg);
+  color: var(--text-color);
+  cursor: pointer;
+  transition: border-color 0.25s, background-color 0.25s;
+}
+
+button:hover:not(:disabled) {
+  border-color: var(--button-hover);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+button:focus,
+button:focus-visible {
+  outline: 4px auto -webkit-focus-ring-color;
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .cell {
+    width: 100px;
+    height: 100px;
+  }
+  
+  .controls {
+    flex-direction: column;
+  }
+  
+  .animation-toggle-container {
+    width: 100%;
+    justify-content: center;
+  }
+}
