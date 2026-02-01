@@ -57,25 +57,59 @@ function normalizeGiftName(name) {
 }
 
 /**
+ * Aggressively normalize a string for key matching (removes all non-alphanumeric)
+ */
+function aggressiveNormalize(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
  * Get the image URL for a gift - uses model endpoint if model is selected, 
  * otherwise falls back to /original endpoint using giftId.
  * @param {string} gift - Gift name (e.g., "Santa Hat")
  * @param {string|null} model - Model name if upgraded, null/empty if not
- * @param {Object} giftIds - Map of gift names to gift IDs
+ * @param {Object} giftIds - Map of gift names to gift IDs (with normalized variants)
  * @param {number} size - Image size (default 256)
  * @returns {string|null} Image URL or null if gift ID not found
  */
 function getGiftImageUrl(gift, model, giftIds, size = 256) {
+  console.log('[getGiftImageUrl] called', { gift, model, giftIdKeysCount: Object.keys(giftIds).length });
+
   if (model) {
-    // Use upgraded model image
-    return `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=${size}`;
+    const url = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=${size}`;
+    console.log('[getGiftImageUrl] → using model URL:', url);
+    return url;
   }
-  // Fallback to original gift image using giftId
-  const giftId = giftIds[gift];
+
+  // Try multiple key variants to find giftId
+  const variants = [
+    gift,                                    // Original: "Santa Hat"
+    aggressiveNormalize(gift),               // Aggressive: "santahat"
+    gift.toLowerCase(),                      // Lowercase: "santa hat"
+    normalizeGiftName(gift),                 // Dashed: "santa-hat"
+    gift.replace(/ /g, ''),                  // No spaces: "SantaHat"
+    gift.toLowerCase().replace(/ /g, '_'),   // Underscored: "santa_hat"
+  ];
+
+  console.log('[getGiftImageUrl] trying variants for gift:', gift, '→', variants);
+  console.log('[getGiftImageUrl] sample giftIds keys:', Object.keys(giftIds).slice(0, 10));
+
+  let giftId = null;
+  for (const variant of variants) {
+    if (giftIds[variant]) {
+      giftId = giftIds[variant];
+      console.log('[getGiftImageUrl] → found via variant:', variant, '→', giftId);
+      break;
+    }
+  }
+
   if (giftId) {
-    return `${API_BASE}/original/${giftId}.png?size=${size}`;
+    const url = `${API_BASE}/original/${giftId}.png?size=${size}`;
+    console.log('[getGiftImageUrl] → using original URL:', url);
+    return url;
   }
-  // Gift ID not found in mapping - return null (image won't be displayed)
+
+  console.warn('[getGiftImageUrl] No giftId found for:', gift);
   return null;
 }
 
@@ -134,6 +168,10 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                 <img
                   src={imageUrl}
                   alt="gift"
+                  onError={(e) => {
+                    console.error('[SortableCell] Image load error:', imageUrl);
+                    e.target.style.display = 'none';
+                  }}
                   style={{
                     position: 'absolute',
                     inset: 0,
@@ -143,7 +181,24 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                     zIndex: 2,
                   }}
                 />
-              ) : null}
+              ) : (
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    backgroundColor: 'rgba(100, 100, 100, 0.3)',
+                    color: '#888',
+                    fontSize: '12px',
+                    textAlign: 'center',
+                    zIndex: 2,
+                  }}
+                >
+                  {cell.gift}<br/>(no image)
+                </div>
+              )}
             </>
           )}
         </div>
@@ -202,7 +257,21 @@ function App() {
 
       // Load gift ID mapping for /original endpoint fallback
       const idsData = await safeFetch('/ids', {});
-      setGiftIds(idsData);
+      console.log('[loadInitialData] Raw idsData keys sample:', Object.keys(idsData).slice(0, 10));
+      
+      // Normalize the keys for flexible lookup
+      const normalizedIds = {};
+      for (const [key, id] of Object.entries(idsData)) {
+        // Store multiple variants of each key for flexible matching
+        normalizedIds[key] = id;                                    // Original
+        normalizedIds[key.toLowerCase()] = id;                      // Lowercase
+        normalizedIds[normalizeGiftName(key)] = id;                 // Dashed lowercase
+        normalizedIds[aggressiveNormalize(key)] = id;               // Aggressive (alphanumeric only)
+        normalizedIds[key.replace(/ /g, '')] = id;                  // No spaces
+        normalizedIds[key.toLowerCase().replace(/ /g, '_')] = id;   // Underscored lowercase
+      }
+      console.log('[loadInitialData] Normalized giftIds count:', Object.keys(normalizedIds).length);
+      setGiftIds(normalizedIds);
 
       setLoading(false);
     } catch {
@@ -471,7 +540,7 @@ function App() {
                         }}
                       />
                     )}
-                    {cellData?.gift && overlayImageUrl && (
+                    {cellData?.gift && overlayImageUrl ? (
                       <img
                         src={overlayImageUrl}
                         alt="gift"
@@ -484,7 +553,24 @@ function App() {
                           zIndex: 2,
                         }}
                       />
-                    )}
+                    ) : cellData?.gift ? (
+                      <div
+                        style={{
+                          position: 'absolute',
+                          inset: 0,
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          backgroundColor: 'rgba(100, 100, 100, 0.3)',
+                          color: '#888',
+                          fontSize: '12px',
+                          textAlign: 'center',
+                          zIndex: 2,
+                        }}
+                      >
+                        {cellData.gift}
+                      </div>
+                    ) : null}
                   </div>
                 ) : (
                   <span className="empty-cell">Empty</span>
