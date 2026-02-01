@@ -56,8 +56,31 @@ function normalizeGiftName(name) {
   return name.toLowerCase().replace(/ /g, '-');
 }
 
+/**
+ * Get the image URL for a gift - uses model endpoint if model is selected, 
+ * otherwise falls back to /original endpoint using giftId.
+ * @param {string} gift - Gift name (e.g., "Santa Hat")
+ * @param {string|null} model - Model name if upgraded, null/empty if not
+ * @param {Object} giftIds - Map of gift names to gift IDs
+ * @param {number} size - Image size (default 256)
+ * @returns {string|null} Image URL or null if gift ID not found
+ */
+function getGiftImageUrl(gift, model, giftIds, size = 256) {
+  if (model) {
+    // Use upgraded model image
+    return `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=${size}`;
+  }
+  // Fallback to original gift image using giftId
+  const giftId = giftIds[gift];
+  if (giftId) {
+    return `${API_BASE}/original/${giftId}.png?size=${size}`;
+  }
+  // Gift ID not found in mapping - return null (image won't be displayed)
+  return null;
+}
+
 // SortableCell component using @dnd-kit
-const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver }) => {
+const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver, giftIds }) => {
   const {
     attributes,
     listeners,
@@ -74,6 +97,9 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
     isDragging ? 'cell-dragging' : '',
     isOver && !isDragging ? 'cell-drop-target' : '',
   ].filter(Boolean).join(' ');
+
+  // Get image URL - model if selected, otherwise original fallback
+  const imageUrl = cell?.gift ? getGiftImageUrl(cell.gift, cell.model, giftIds) : null;
 
   return (
     <div
@@ -97,17 +123,17 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
           {cell?.pattern && cell?.gift && (
             <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
           )}
-          {cell?.gift && cell?.model && (
+          {cell?.gift && (
             <>
-              {isPlaying && animationMode ? (
+              {isPlaying && animationMode && cell.model ? (
                 <TgsAnimation 
                   gift={cell.gift} 
                   model={cell.model}
                 />
-              ) : (
+              ) : imageUrl ? (
                 <img
-                  src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=256`}
-                  alt="gift model"
+                  src={imageUrl}
+                  alt="gift"
                   style={{
                     position: 'absolute',
                     inset: 0,
@@ -117,7 +143,7 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                     zIndex: 2,
                   }}
                 />
-              )}
+              ) : null}
             </>
           )}
         </div>
@@ -134,6 +160,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [gifts, setGifts] = useState([]);
   const [backdrops, setBackdrops] = useState([]);
+  const [giftIds, setGiftIds] = useState({}); // Map of gift name -> gift ID for /original endpoint
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [currentCell, setCurrentCell] = useState({ row: -1, col: -1 });
   const [copiedCell, setCopiedCell] = useState(null);
@@ -172,6 +199,10 @@ function App() {
       // Load backdrops from API
       const backdropsData = await safeFetch('/backdrops', []);
       setBackdrops(backdropsData);
+
+      // Load gift ID mapping for /original endpoint fallback
+      const idsData = await safeFetch('/ids', {});
+      setGiftIds(idsData);
 
       setLoading(false);
     } catch {
@@ -417,6 +448,7 @@ function App() {
                   animationMode={animationMode}
                   onCellClick={openModal}
                   isOver={overId === cellId && activeId !== cellId}
+                  giftIds={giftIds}
                 />
               );
             })}
@@ -427,6 +459,7 @@ function App() {
             <div className="cell cell-overlay">
               {(() => {
                 const cellData = getActiveCellData();
+                const overlayImageUrl = cellData?.gift ? getGiftImageUrl(cellData.gift, cellData.model, giftIds) : null;
                 return cellData ? (
                   <div style={{ position: 'relative', width: '100%', height: '100%' }}>
                     {cellData.backdrop && (
@@ -438,10 +471,10 @@ function App() {
                         }}
                       />
                     )}
-                    {cellData?.gift && cellData?.model && (
+                    {cellData?.gift && overlayImageUrl && (
                       <img
-                        src={`${API_BASE}/model/${normalizeGiftName(cellData.gift)}/${cellData.model}.png?size=256`}
-                        alt="gift model"
+                        src={overlayImageUrl}
+                        alt="gift"
                         style={{
                           position: 'absolute',
                           inset: 0,
