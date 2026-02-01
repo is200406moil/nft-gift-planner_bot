@@ -404,9 +404,89 @@ function App() {
     const match = link.match(/t\.me\/nft\/(.+?)-(\d+)/);
     if (match) {
       const name = match[1].replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-      return name;
+      const giftNumber = match[2];
+      return { name, giftNumber, slug: match[1] };
     }
     return null;
+  };
+
+  /**
+   * Parse NFT page content to extract Model, Backdrop, Symbol
+   * Content format example:
+   *   Model: Diamonds 0.5%
+   *   Backdrop: Gunmetal 1.2%
+   *   Symbol: Bubble Tea 0.4%
+   */
+  const parseNftPageContent = (text) => {
+    const result = { model: '', backdrop: '', pattern: '' };
+    
+    // Regex patterns to extract values (stops at percentage or newline)
+    const modelMatch = text.match(/Model:\s*([^%\n]+?)\s*\d+\.?\d*%/i);
+    const backdropMatch = text.match(/Backdrop:\s*([^%\n]+?)\s*\d+\.?\d*%/i);
+    const symbolMatch = text.match(/Symbol:\s*([^%\n]+?)\s*\d+\.?\d*%/i);
+    
+    if (modelMatch) {
+      result.model = modelMatch[1].trim();
+      console.log('[parseNftPageContent] Found model:', result.model);
+    }
+    if (backdropMatch) {
+      result.backdrop = backdropMatch[1].trim();
+      console.log('[parseNftPageContent] Found backdrop:', result.backdrop);
+    }
+    if (symbolMatch) {
+      result.pattern = symbolMatch[1].trim();
+      console.log('[parseNftPageContent] Found symbol/pattern:', result.pattern);
+    }
+    
+    return result;
+  };
+
+  /**
+   * Fetch NFT page and extract upgrade details
+   * Uses CORS proxy to bypass browser restrictions
+   */
+  const fetchNftDetails = async (slug, giftNumber) => {
+    const url = `https://t.me/nft/${slug}-${giftNumber}`;
+    console.log('[fetchNftDetails] Fetching:', url);
+    
+    try {
+      // Use a CORS proxy to fetch the Telegram page
+      // Try multiple proxies in case one fails
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      ];
+      
+      let html = null;
+      for (const proxyUrl of proxies) {
+        try {
+          const response = await fetch(proxyUrl, { 
+            cache: 'no-store',
+            headers: { 'Accept': 'text/html' }
+          });
+          if (response.ok) {
+            html = await response.text();
+            console.log('[fetchNftDetails] Fetched via proxy:', proxyUrl.split('?')[0]);
+            break;
+          }
+        } catch (proxyError) {
+          console.warn('[fetchNftDetails] Proxy failed:', proxyError.message);
+        }
+      }
+      
+      if (!html) {
+        console.warn('[fetchNftDetails] All proxies failed');
+        return null;
+      }
+      
+      // Parse the HTML to extract text content
+      // The page content is in meta tags or page body
+      const details = parseNftPageContent(html);
+      return details;
+    } catch (error) {
+      console.error('[fetchNftDetails] Error:', error);
+      return null;
+    }
   };
 
   const handleDragStart = (event) => {
@@ -673,6 +753,7 @@ function App() {
         normalizeGiftName={normalizeGiftName}
         safeFetch={safeFetch}
         parseLink={parseLink}
+        fetchNftDetails={fetchNftDetails}
         copiedCell={copiedCell}
         setCopiedCell={setCopiedCell}
         initialData={grid[currentCell.row]?.[currentCell.col] || null}
@@ -694,6 +775,7 @@ const CellModal = ({
   normalizeGiftName,
   safeFetch,
   parseLink,
+  fetchNftDetails,
   copiedCell,
   setCopiedCell,
   initialData,
@@ -706,6 +788,8 @@ const CellModal = ({
   const [models, setModels] = useState([]);
   const [patterns, setPatterns] = useState([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isParsingLink, setIsParsingLink] = useState(false);
+  const [parseStatus, setParseStatus] = useState('');
 
   // Reset modal state when it opens or when initialData changes
   useEffect(() => {
@@ -718,6 +802,8 @@ const CellModal = ({
       setModels([]);
       setPatterns([]);
       setIsInitialLoad(true);
+      setIsParsingLink(false);
+      setParseStatus('');
       
       // Load models and patterns for existing gift without resetting values
       if (initialData?.gift) {
@@ -765,10 +851,72 @@ const CellModal = ({
     }
   };
 
-  const handleLink = () => {
+  const handleLink = async () => {
     const parsed = parseLink(link);
-    if (parsed) {
-      handleGiftChange(parsed);
+    if (!parsed) {
+      setParseStatus('Неверный формат ссылки');
+      return;
+    }
+
+    const { name, giftNumber, slug } = parsed;
+    console.log('[handleLink] Parsed link:', { name, giftNumber, slug });
+    
+    // Set the gift name first
+    setGift(name);
+    setModels([]);
+    setPatterns([]);
+    setIsInitialLoad(false);
+    
+    // Load models and patterns for the gift
+    await loadModelsAndPatterns(name);
+    
+    // Now fetch additional details from the NFT page
+    setIsParsingLink(true);
+    setParseStatus('Загрузка данных NFT...');
+    
+    try {
+      const details = await fetchNftDetails(slug, giftNumber);
+      
+      if (details) {
+        console.log('[handleLink] Fetched NFT details:', details);
+        
+        // Set model if found and exists in models list
+        if (details.model) {
+          setModel(details.model);
+          setParseStatus(`Найдена модель: ${details.model}`);
+          // Prefetch animation
+          prefetchAnimation(name, details.model);
+        }
+        
+        // Set pattern/symbol if found
+        if (details.pattern) {
+          setPattern(details.pattern);
+        }
+        
+        // Set backdrop if found - need to find matching backdrop from backdrops list
+        if (details.backdrop) {
+          const matchingBackdrop = backdrops.find(b => 
+            b.name.toLowerCase() === details.backdrop.toLowerCase() ||
+            b.name.toLowerCase().includes(details.backdrop.toLowerCase()) ||
+            details.backdrop.toLowerCase().includes(b.name.toLowerCase())
+          );
+          if (matchingBackdrop) {
+            setBackdrop(matchingBackdrop);
+            setParseStatus(prev => prev + `, фон: ${matchingBackdrop.name}`);
+          }
+        }
+        
+        if (!details.model && !details.pattern && !details.backdrop) {
+          setParseStatus('Базовый подарок (без улучшений)');
+        }
+      } else {
+        setParseStatus('Не удалось загрузить детали NFT');
+      }
+    } catch (error) {
+      console.error('[handleLink] Error fetching details:', error);
+      setParseStatus('Ошибка при загрузке данных');
+    } finally {
+      setIsParsingLink(false);
     }
   };
 
@@ -799,7 +947,20 @@ const CellModal = ({
     <Modal isOpen={isOpen} onRequestClose={onClose}>
       <h2>Настройка ячейки</h2>
       <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="t.me/nft/Name-123" />
-      <button onClick={handleLink}>Распознать ссылку</button>
+      <button onClick={handleLink} disabled={isParsingLink}>
+        {isParsingLink ? 'Загрузка...' : 'Распознать ссылку'}
+      </button>
+      {parseStatus && (
+        <div style={{ 
+          marginTop: '8px', 
+          padding: '8px', 
+          backgroundColor: 'rgba(100, 100, 255, 0.1)', 
+          borderRadius: '4px',
+          fontSize: '12px'
+        }}>
+          {parseStatus}
+        </div>
+      )}
 
       <select value={gift} onChange={(e) => handleGiftChange(e.target.value)}>
         <option value="">Выберите подарок</option>
