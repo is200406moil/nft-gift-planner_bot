@@ -570,8 +570,9 @@ function App() {
       // Use a CORS proxy to fetch the Telegram page
       // Try multiple proxies in case one fails
       const proxies = [
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // JSON wrapper format (more reliable)
         `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // JSON wrapper format
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, // Raw format as fallback
       ];
       
       let html = null;
