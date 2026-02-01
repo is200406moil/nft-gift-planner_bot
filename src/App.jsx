@@ -557,12 +557,14 @@ function App() {
     console.log('[fetchNftDetails] Fetching:', url);
     
     try {
+      // Minimum length for valid HTML response (short responses are likely error pages)
+      const MIN_VALID_HTML_LENGTH = 100;
+      
       // Use a CORS proxy to fetch the Telegram page
       // Try multiple proxies in case one fails
       const proxies = [
-        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // JSON wrapper format
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // JSON wrapper format (more reliable)
         `https://corsproxy.io/?${encodeURIComponent(url)}`,
-        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
       ];
       
       let html = null;
@@ -587,7 +589,7 @@ function App() {
               html = text;
             }
             console.log('[fetchNftDetails] Fetched via proxy:', proxyUrl.split('?')[0], 'Length:', html?.length);
-            if (html && html.length > 100) break;
+            if (html && html.length > MIN_VALID_HTML_LENGTH) break;
           }
         } catch (proxyError) {
           console.warn('[fetchNftDetails] Proxy failed:', proxyUrl.split('?')[0], proxyError.message);
