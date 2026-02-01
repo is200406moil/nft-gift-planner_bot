@@ -47,6 +47,7 @@ const loadPako = async () => {
 };
 
 const API_BASE = 'https://api.changes.tg';
+const CDN_BASE = 'https://cdn.changes.tg';
 
 // Animation cache for prefetched TGS data
 const animationCache = new Map();
@@ -130,7 +131,7 @@ function getGiftImageUrl(gift, model, giftIds, size = 256) {
   }
 
   if (giftId) {
-    const url = `${API_BASE}/original/${giftId}.png?size=${size}`;
+    const url = `${CDN_BASE}/gifts/originals/${giftId}/Original.png`;
     console.log('[getGiftImageUrl] → original URL:', url);
     return url;
   }
@@ -1444,7 +1445,7 @@ const TgsAnimation = ({ gift, model, giftId }) => {
           if (model) {
             fallbackUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=256`;
           } else if (giftId) {
-            fallbackUrl = `${API_BASE}/original/${giftId}.png?size=256`;
+            fallbackUrl = `${CDN_BASE}/gifts/originals/${giftId}/Original.png`;
           }
           
           if (fallbackUrl) {
