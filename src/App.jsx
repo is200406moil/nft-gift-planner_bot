@@ -412,32 +412,77 @@ function App() {
 
   /**
    * Parse NFT page content to extract Model, Backdrop, Symbol
-   * Content format example:
-   *   Model: Diamonds 0.5%
-   *   Backdrop: Gunmetal 1.2%
-   *   Symbol: Bubble Tea 0.4%
+   * Handles multiple formats:
+   * - Markdown table: | Model | Diamonds 0.5% |
+   * - Text format: Model: Diamonds 0.5%
    */
   const parseNftPageContent = (text) => {
     const result = { model: '', backdrop: '', pattern: '' };
     
-    // Regex patterns to extract values (stops at percentage or newline)
-    const modelMatch = text.match(/Model:\s*([^%\n]+?)\s*\d+\.?\d*%/i);
-    const backdropMatch = text.match(/Backdrop:\s*([^%\n]+?)\s*\d+\.?\d*%/i);
-    const symbolMatch = text.match(/Symbol:\s*([^%\n]+?)\s*\d+\.?\d*%/i);
+    // Log first 2000 chars of text for debugging
+    console.log('[parseNftPageContent] Raw text (first 2000 chars):', text.substring(0, 2000));
     
-    if (modelMatch) {
-      result.model = modelMatch[1].trim();
-      console.log('[parseNftPageContent] Found model:', result.model);
-    }
-    if (backdropMatch) {
-      result.backdrop = backdropMatch[1].trim();
-      console.log('[parseNftPageContent] Found backdrop:', result.backdrop);
-    }
-    if (symbolMatch) {
-      result.pattern = symbolMatch[1].trim();
-      console.log('[parseNftPageContent] Found symbol/pattern:', result.pattern);
+    // Split into lines for line-by-line parsing
+    const lines = text.split('\n').map(l => l.trim());
+    console.log('[parseNftPageContent] Total lines:', lines.length);
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineLower = line.toLowerCase();
+      
+      // Skip empty lines
+      if (!line) continue;
+      
+      // Check for Model
+      if (lineLower.includes('model') && !result.model) {
+        // Try markdown table format: | Model | Diamonds 0.5% |
+        let match = line.match(/\|\s*Model\s*\|\s*([^|]+?)\s*(?:\d+\.?\d*%\s*)?\|/i);
+        if (!match) {
+          // Try text format: Model: Diamonds 0.5%
+          match = line.match(/Model\s*[:|]\s*([^%\n]+?)(?:\s+\d+\.?\d*%|$)/i);
+        }
+        if (!match) {
+          // Try simple format without percentage
+          match = line.match(/Model\s*[:|]\s*(.+)/i);
+        }
+        if (match && match[1]) {
+          result.model = match[1].trim().replace(/\s*\d+\.?\d*%\s*$/, '').trim();
+          console.log('[parseNftPageContent] Found model on line', i, ':', result.model, '| Line:', line);
+        }
+      }
+      
+      // Check for Backdrop
+      if (lineLower.includes('backdrop') && !result.backdrop) {
+        let match = line.match(/\|\s*Backdrop\s*\|\s*([^|]+?)\s*(?:\d+\.?\d*%\s*)?\|/i);
+        if (!match) {
+          match = line.match(/Backdrop\s*[:|]\s*([^%\n]+?)(?:\s+\d+\.?\d*%|$)/i);
+        }
+        if (!match) {
+          match = line.match(/Backdrop\s*[:|]\s*(.+)/i);
+        }
+        if (match && match[1]) {
+          result.backdrop = match[1].trim().replace(/\s*\d+\.?\d*%\s*$/, '').trim();
+          console.log('[parseNftPageContent] Found backdrop on line', i, ':', result.backdrop, '| Line:', line);
+        }
+      }
+      
+      // Check for Symbol or Pattern
+      if ((lineLower.includes('symbol') || lineLower.includes('pattern')) && !result.pattern) {
+        let match = line.match(/\|\s*(?:Symbol|Pattern)\s*\|\s*([^|]+?)\s*(?:\d+\.?\d*%\s*)?\|/i);
+        if (!match) {
+          match = line.match(/(?:Symbol|Pattern)\s*[:|]\s*([^%\n]+?)(?:\s+\d+\.?\d*%|$)/i);
+        }
+        if (!match) {
+          match = line.match(/(?:Symbol|Pattern)\s*[:|]\s*(.+)/i);
+        }
+        if (match && match[1]) {
+          result.pattern = match[1].trim().replace(/\s*\d+\.?\d*%\s*$/, '').trim();
+          console.log('[parseNftPageContent] Found pattern on line', i, ':', result.pattern, '| Line:', line);
+        }
+      }
     }
     
+    console.log('[parseNftPageContent] Extracted result:', result);
     return result;
   };
 
@@ -993,7 +1038,7 @@ const CellModal = ({
             <option value="">Выберите фон</option>
             {backdrops.map((b) => (
               <option key={b.name} value={b.name}>
-                {b.name} {b.hex?.centerColor ? `(${b.hex.centerColor})` : ''}
+                {b.name}
               </option>
             ))}
           </select>
