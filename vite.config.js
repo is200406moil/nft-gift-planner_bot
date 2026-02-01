@@ -60,7 +60,9 @@ export default defineConfig({
     minify: 'esbuild',
     // Source maps in production for debugging (can disable if needed)
     sourcemap: false,
-    // Set chunk warning limit (we've optimized as much as practical)
+    // Chunk size warning limit: 250KB is a good target for Telegram Mini Apps
+    // React core (~193KB) is unavoidable; lottie (~267KB) is lazy-loaded
+    // Adjust if adding new large dependencies
     chunkSizeWarningLimit: 250,
   },
   // Optimize dependencies pre-bundling
