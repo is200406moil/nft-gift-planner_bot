@@ -102,15 +102,7 @@ function getGiftImageUrl(gift, model, giftIds, size = 256) {
   
   console.log('[getGiftImageUrl] called', { gift, model });
 
-  // If model is selected, use the model endpoint
-  if (model && model.trim() !== '') {
-    const normGift = normalizeGiftName(gift);
-    const url = `${API_BASE}/model/${normGift}/${model}.png?size=${size}`;
-    console.log('[getGiftImageUrl] → model URL:', url);
-    return url;
-  }
-
-  // Fallback to /original endpoint using gift ID
+  // Always use CDN endpoint with gift ID for better reliability
   // Try multiple key variants to find giftId in the name→id mapping
   const variants = [
     gift,                                    // Original: "Santa Hat"
@@ -188,7 +180,7 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
     return null;
   };
   
-  const giftId = cell?.gift && !cell?.model ? getGiftIdForAnimation(cell.gift) : null;
+  const giftId = cell?.gift ? getGiftIdForAnimation(cell.gift) : null;
   
   // Determine cell background gradient
   const cellBackground = cell?.backdrop 
@@ -1440,11 +1432,9 @@ const TgsAnimation = ({ gift, model, giftId }) => {
         if (isMounted && containerRef.current) {
           containerRef.current.textContent = '';
           
-          // Fallback to PNG
+          // Fallback to PNG using CDN
           let fallbackUrl;
-          if (model) {
-            fallbackUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=256`;
-          } else if (giftId) {
+          if (giftId) {
             fallbackUrl = `${CDN_BASE}/gifts/originals/${giftId}/Original.png`;
           }
           
