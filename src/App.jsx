@@ -413,7 +413,14 @@ function App() {
   const parseLink = (link) => {
     const match = link.match(/t\.me\/nft\/(.+?)-(\d+)/);
     if (match) {
-      const name = match[1].replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      // Convert slug to gift name:
+      // 1. Replace dashes with spaces: "magic-potion" → "magic potion"
+      // 2. Insert space before capital letters: "InstantRamen" → "Instant Ramen"  
+      // 3. Capitalize each word: "instant ramen" → "Instant Ramen"
+      let name = match[1]
+        .replace(/-/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2') // Insert space before capitals
+        .replace(/\b\w/g, (l) => l.toUpperCase());
       const giftNumber = match[2];
       return { name, giftNumber, slug: match[1] };
     }
@@ -1074,18 +1081,18 @@ const CellModal = ({
     const { name, giftNumber, slug } = parsed;
     console.log('[handleLink] Parsed link:', { name, giftNumber, slug });
     
-    // Set the gift name first
+    // Set the gift name first - this ensures gift is added even if details fetch fails
     setGift(name);
     setModels([]);
     setPatterns([]);
     setIsInitialLoad(false);
+    setParseStatus(`Подарок "${name}" добавлен. Загрузка деталей...`);
     
     // Load models and patterns for the gift
     await loadModelsAndPatterns(name);
     
     // Now fetch additional details from the NFT page
     setIsParsingLink(true);
-    setParseStatus('Загрузка данных NFT...');
     
     try {
       const details = await fetchNftDetails(slug, giftNumber);
@@ -1101,7 +1108,7 @@ const CellModal = ({
         // Set model if found and exists in models list
         if (details.model) {
           setModel(details.model);
-          setParseStatus(`Найдена модель: ${details.model}`);
+          setParseStatus(`Подарок "${name}" добавлен. Модель: ${details.model}`);
           // Prefetch animation
           prefetchAnimation(name, details.model);
         }
@@ -1125,14 +1132,16 @@ const CellModal = ({
         }
         
         if (!details.model && !details.pattern && !details.backdrop) {
-          setParseStatus('Базовый подарок (без улучшений)');
+          setParseStatus(`Подарок "${name}" добавлен (базовый, без улучшений)`);
         }
       } else {
-        setParseStatus('Не удалось загрузить детали NFT');
+        // Gift is still added, just couldn't get extra details
+        setParseStatus(`Подарок "${name}" добавлен. Детали NFT недоступны.`);
       }
     } catch (error) {
       console.error('[handleLink] Error fetching details:', error);
-      setParseStatus('Ошибка при загрузке данных');
+      // Gift is still added, just couldn't get extra details
+      setParseStatus(`Подарок "${name}" добавлен. Ошибка загрузки деталей.`);
     } finally {
       setIsParsingLink(false);
     }
