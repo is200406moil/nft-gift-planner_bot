@@ -115,6 +115,17 @@ function getGiftImageUrl(gift, model, giftIds, size = 256) {
   return null;
 }
 
+// Helper function to format numbers (1000 -> 1K, 1000000 -> 1M)
+function formatNumber(num) {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return num.toString();
+}
+
 // SortableCell component using @dnd-kit
 const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver, giftIds }) => {
   const {
@@ -153,26 +164,28 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
   };
   
   const giftId = cell?.gift && !cell?.model ? getGiftIdForAnimation(cell.gift) : null;
+  
+  // Determine cell background gradient
+  const cellBackground = cell?.backdrop 
+    ? `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#1a3a5a'}, ${cell.backdrop.hex?.centerColor || '#2a5a8a'})`
+    : 'var(--default-cell-gradient)';
+  
+  // Ribbon gradient from backdrop colors or default blue
+  const ribbonGradient = cell?.backdrop
+    ? `linear-gradient(135deg, ${cell.backdrop.hex?.edgeColor || '#007BFF'}, ${cell.backdrop.hex?.centerColor || '#00C6FF'})`
+    : 'var(--ribbon-gradient)';
 
   return (
     <div
       ref={setNodeRef}
       className={cellClasses}
       onClick={() => onCellClick(rowIndex, colIndex)}
+      style={{ background: cellBackground }}
       {...attributes}
       {...listeners}
     >
       {cell ? (
-        <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-          {cell.backdrop && (
-            <div
-              style={{
-                position: 'absolute',
-                inset: 0,
-                background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
-              }}
-            />
-          )}
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
           {cell?.pattern && cell?.gift && (
             <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
           )}
@@ -194,9 +207,9 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                   }}
                   style={{
                     position: 'absolute',
-                    inset: 0,
-                    width: '100%',
-                    height: '100%',
+                    inset: '10%',
+                    width: '80%',
+                    height: '80%',
                     objectFit: 'contain',
                     zIndex: 2,
                   }}
@@ -209,21 +222,31 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
-                    backgroundColor: 'rgba(100, 100, 100, 0.3)',
-                    color: '#888',
+                    color: 'rgba(255, 255, 255, 0.7)',
                     fontSize: '12px',
                     textAlign: 'center',
                     zIndex: 2,
+                    textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
                   }}
                 >
-                  {cell.gift}<br/>(no image)
+                  {cell.gift}
+                </div>
+              )}
+              
+              {/* Uniqueness Ribbon */}
+              {cell.totalIssued && (
+                <div 
+                  className="uniqueness-ribbon"
+                  style={{ background: ribbonGradient }}
+                >
+                  1 из {formatNumber(cell.totalIssued)}
                 </div>
               )}
             </>
           )}
         </div>
       ) : (
-        <span className="empty-cell">Empty</span>
+        <span className="empty-cell">Пусто</span>
       )}
     </div>
   );
@@ -370,20 +393,6 @@ function App() {
     return fallback;
   };
 
-  const addRow = () => {
-    // Limit to 5 rows when animation mode is active
-    if (animationMode && rows >= 5) return;
-    setRows(rows + 1);
-    setGrid([...grid, Array(3).fill(null)]);
-  };
-
-  const removeRow = () => {
-    if (rows <= 3) return;
-    const newGrid = grid.slice(0, -1); // Remove last row
-    setGrid(newGrid);
-    setRows(rows - 1);
-  };
-
   const openModal = (row, col) => {
     setCurrentCell({ row, col });
     setModalIsOpen(true);
@@ -411,13 +420,14 @@ function App() {
   };
 
   /**
-   * Parse NFT page content to extract Model, Backdrop, Symbol
+   * Parse NFT page content to extract Model, Backdrop, Symbol, and total issued count
    * Handles multiple formats:
    * - Markdown table: | Model | Diamonds 0.5% |
    * - Text format: Model: Diamonds 0.5%
+   * - Quantity: X/Y issued or X/Y
    */
   const parseNftPageContent = (text) => {
-    const result = { model: '', backdrop: '', pattern: '' };
+    const result = { model: '', backdrop: '', pattern: '', totalIssued: null };
     
     // Log first 2000 chars of text for debugging
     console.log('[parseNftPageContent] Raw text (first 2000 chars):', text.substring(0, 2000));
@@ -478,6 +488,21 @@ function App() {
         if (match && match[1]) {
           result.pattern = match[1].trim().replace(/\s*\d+\.?\d*%\s*$/, '').trim();
           console.log('[parseNftPageContent] Found pattern on line', i, ':', result.pattern, '| Line:', line);
+        }
+      }
+      
+      // Check for Quantity / issued count (e.g., "367 993/457 382 issued" or "Quantity: 367 993/457 382")
+      if ((lineLower.includes('quantity') || lineLower.includes('issued') || line.includes('/')) && !result.totalIssued) {
+        // Try to match patterns like "367 993/457 382 issued" or "367,993/457,382"
+        let match = line.match(/[\d,\s]+\/\s*([\d,\s]+)/);
+        if (match && match[1]) {
+          // Remove spaces and commas, parse as number
+          const totalStr = match[1].replace(/[\s,]/g, '');
+          const total = parseInt(totalStr, 10);
+          if (!isNaN(total) && total > 0) {
+            result.totalIssued = total;
+            console.log('[parseNftPageContent] Found totalIssued on line', i, ':', result.totalIssued, '| Line:', line);
+          }
         }
       }
     }
@@ -652,138 +677,211 @@ function App() {
     const colIndex = activeIndex % 3;
     return grid[rowIndex]?.[colIndex];
   };
+  
+  // Add row at top
+  const addRowTop = () => {
+    if (animationMode && rows >= 5) return;
+    setGrid(prev => [[null, null, null], ...prev]);
+    setRows(prev => prev + 1);
+  };
+  
+  // Remove row from top
+  const removeRowTop = () => {
+    if (rows <= 1) return;
+    setGrid(prev => prev.slice(1));
+    setRows(prev => prev - 1);
+  };
+  
+  // Add row at bottom
+  const addRowBottom = () => {
+    if (animationMode && rows >= 5) return;
+    setGrid(prev => [...prev, [null, null, null]]);
+    setRows(prev => prev + 1);
+  };
+  
+  // Remove row from bottom  
+  const removeRowBottom = () => {
+    if (rows <= 1) return;
+    setGrid(prev => prev.slice(0, -1));
+    setRows(prev => prev - 1);
+  };
 
   if (loading) {
-    return <div className="splash">Loading...</div>;
+    return <div className="splash">Загрузка...</div>;
   }
 
   return (
     <div className="app">
-      <div className="controls">
-        <div className="animation-toggle-container">
-          <label>
-            <input
-              type="checkbox"
-              checked={animationMode}
-              onChange={toggleAnimationMode}
-            />
-            Анимация
-          </label>
-          <span 
-            className="tooltip-icon" 
-            title="ВНИМАНИЕ! При включенном режиме анимации сетка будет ограничена в 5 рядов."
-          >
-            ?
-          </span>
-        </div>
-        {animationMode && (
-          <button 
-            onClick={playAllAnimations} 
-            disabled={isAnyAnimationPlaying()}
-            className="animate-all-button"
-          >
-            Анимировать всё
-          </button>
-        )}
-        <button onClick={addRow} disabled={animationMode && rows >= 5}>
-          Добавить ряд
-        </button>
-        <button onClick={removeRow} disabled={rows <= 3}>
-          Удалить ряд
-        </button>
-        <button onClick={resetGrid}>Сброс</button>
-        <button onClick={exportGrid}>Экспорт</button>
+      {/* Fixed animation toggle in top-right corner */}
+      <div className="animation-toggle-fixed">
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={animationMode}
+            onChange={toggleAnimationMode}
+          />
+          <span className="toggle-slider"></span>
+        </label>
+        <span 
+          className="tooltip-icon" 
+          title="ВНИМАНИЕ! При включенном режиме анимации сетка будет ограничена в 5 рядов."
+        >
+          ?
+        </span>
       </div>
       
-      <DndContext
-        sensors={sensors}
-        collisionDetection={closestCenter}
-        onDragStart={handleDragStart}
-        onDragOver={handleDragOver}
-        onDragEnd={handleDragEnd}
-        onDragCancel={handleDragCancel}
-      >
-        <SortableContext items={cellIds} strategy={rectSortingStrategy}>
-          <div id="grid" className="grid-container">
-            {grid.flat().map((cell, flatIndex) => {
-              const rowIndex = Math.floor(flatIndex / 3);
-              const colIndex = flatIndex % 3;
-              const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
-              const cellId = `cell-${flatIndex}`;
-              return (
-                <SortableCell
-                  key={cellId}
-                  id={cellId}
-                  cell={cell}
-                  rowIndex={rowIndex}
-                  colIndex={colIndex}
-                  isPlaying={isPlaying}
-                  animationMode={animationMode}
-                  onCellClick={openModal}
-                  isOver={overId === cellId && activeId !== cellId}
-                  giftIds={giftIds}
-                />
-              );
-            })}
-          </div>
-        </SortableContext>
-        <DragOverlay dropAnimation={null}>
-          {activeId ? (
-            <div className="cell cell-overlay">
-              {(() => {
-                const cellData = getActiveCellData();
-                const overlayImageUrl = cellData?.gift ? getGiftImageUrl(cellData.gift, cellData.model, giftIds) : null;
-                return cellData ? (
-                  <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                    {cellData.backdrop && (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          background: `linear-gradient(to bottom, ${cellData.backdrop.hex?.edgeColor || '#000'}, ${cellData.backdrop.hex?.centerColor || '#333'})`,
-                        }}
-                      />
-                    )}
-                    {cellData?.gift && overlayImageUrl ? (
-                      <img
-                        src={overlayImageUrl}
-                        alt="gift"
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          width: '100%',
-                          height: '100%',
-                          objectFit: 'contain',
-                          zIndex: 2,
-                        }}
-                      />
-                    ) : cellData?.gift ? (
-                      <div
-                        style={{
-                          position: 'absolute',
-                          inset: 0,
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          backgroundColor: 'rgba(100, 100, 100, 0.3)',
-                          color: '#888',
-                          fontSize: '12px',
-                          textAlign: 'center',
-                          zIndex: 2,
-                        }}
-                      >
-                        {cellData.gift}
-                      </div>
-                    ) : null}
-                  </div>
-                ) : (
-                  <span className="empty-cell">Empty</span>
+      <div className="grid-wrapper">
+        {/* Top row controls */}
+        <div className="grid-controls">
+          <button 
+            className="control-button" 
+            onClick={addRowTop}
+            disabled={animationMode && rows >= 5}
+            title="Добавить ряд сверху"
+          >
+            +
+          </button>
+          <button 
+            className="control-button play-button" 
+            onClick={playAllAnimations}
+            disabled={!animationMode || isAnyAnimationPlaying()}
+            title="Запустить анимацию"
+          >
+            ▶
+          </button>
+          <button 
+            className="control-button" 
+            onClick={removeRowTop}
+            disabled={rows <= 1}
+            title="Удалить ряд сверху"
+          >
+            −
+          </button>
+        </div>
+        
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          <SortableContext items={cellIds} strategy={rectSortingStrategy}>
+            <div id="grid" className="grid-container">
+              {grid.flat().map((cell, flatIndex) => {
+                const rowIndex = Math.floor(flatIndex / 3);
+                const colIndex = flatIndex % 3;
+                const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
+                const cellId = `cell-${flatIndex}`;
+                return (
+                  <SortableCell
+                    key={cellId}
+                    id={cellId}
+                    cell={cell}
+                    rowIndex={rowIndex}
+                    colIndex={colIndex}
+                    isPlaying={isPlaying}
+                    animationMode={animationMode}
+                    onCellClick={openModal}
+                    isOver={overId === cellId && activeId !== cellId}
+                    giftIds={giftIds}
+                  />
                 );
-              })()}
+              })}
             </div>
-          ) : null}
-        </DragOverlay>
-      </DndContext>
+          </SortableContext>
+          <DragOverlay dropAnimation={null}>
+            {activeId ? (
+              (() => {
+                const cellData = getActiveCellData();
+                const overlayBackground = cellData?.backdrop 
+                  ? `linear-gradient(to bottom, ${cellData.backdrop.hex?.edgeColor || '#1a3a5a'}, ${cellData.backdrop.hex?.centerColor || '#2a5a8a'})`
+                  : 'var(--default-cell-gradient)';
+                const overlayImageUrl = cellData?.gift ? getGiftImageUrl(cellData.gift, cellData.model, giftIds) : null;
+                return (
+                  <div className="cell cell-overlay" style={{ background: overlayBackground }}>
+                    {cellData ? (
+                      <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+                        {cellData?.gift && overlayImageUrl ? (
+                          <img
+                            src={overlayImageUrl}
+                            alt="gift"
+                            style={{
+                              position: 'absolute',
+                              inset: '10%',
+                              width: '80%',
+                              height: '80%',
+                              objectFit: 'contain',
+                              zIndex: 2,
+                            }}
+                          />
+                        ) : cellData?.gift ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'rgba(255, 255, 255, 0.7)',
+                              fontSize: '12px',
+                              textAlign: 'center',
+                              zIndex: 2,
+                            }}
+                          >
+                            {cellData.gift}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="empty-cell">Пусто</span>
+                    )}
+                  </div>
+                );
+              })()
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+        
+        {/* Bottom row controls */}
+        <div className="grid-controls">
+          <button 
+            className="control-button" 
+            onClick={addRowBottom}
+            disabled={animationMode && rows >= 5}
+            title="Добавить ряд снизу"
+          >
+            +
+          </button>
+          <button 
+            className="control-button play-button" 
+            onClick={playAllAnimations}
+            disabled={!animationMode || isAnyAnimationPlaying()}
+            title="Запустить анимацию"
+          >
+            ▶
+          </button>
+          <button 
+            className="control-button" 
+            onClick={removeRowBottom}
+            disabled={rows <= 1}
+            title="Удалить ряд снизу"
+          >
+            −
+          </button>
+        </div>
+        
+        {/* Bottom action buttons */}
+        <div className="bottom-actions">
+          <button className="action-button export-button" onClick={exportGrid}>
+            Сохранить
+          </button>
+          <button className="action-button clear-button" onClick={resetGrid}>
+            Очистить
+          </button>
+        </div>
+      </div>
 
       <CellModal
         isOpen={modalIsOpen}
@@ -830,6 +928,7 @@ const CellModal = ({
   const [model, setModel] = useState('');
   const [backdrop, setBackdrop] = useState(null);
   const [pattern, setPattern] = useState('');
+  const [totalIssued, setTotalIssued] = useState(null);
   const [models, setModels] = useState([]);
   const [patterns, setPatterns] = useState([]);
   const [isInitialLoad, setIsInitialLoad] = useState(true);
@@ -844,6 +943,7 @@ const CellModal = ({
       setModel(initialData?.model || '');
       setBackdrop(initialData?.backdrop || null);
       setPattern(initialData?.pattern || '');
+      setTotalIssued(initialData?.totalIssued || null);
       setModels([]);
       setPatterns([]);
       setIsInitialLoad(true);
@@ -925,6 +1025,11 @@ const CellModal = ({
       if (details) {
         console.log('[handleLink] Fetched NFT details:', details);
         
+        // Set totalIssued for uniqueness ribbon
+        if (details.totalIssued) {
+          setTotalIssued(details.totalIssued);
+        }
+        
         // Set model if found and exists in models list
         if (details.model) {
           setModel(details.model);
@@ -985,7 +1090,7 @@ const CellModal = ({
   };
 
   const handleSave = () => {
-    onSave({ gift, model, backdrop, pattern });
+    onSave({ gift, model, backdrop, pattern, totalIssued });
   };
 
   return (
