@@ -1119,12 +1119,30 @@ const CellModal = ({
 
       {gift && (
         <>
-          <select value={model} onChange={(e) => {
+          <select value={model} onChange={async (e) => {
             const newModel = e.target.value;
             setModel(newModel);
             // Prefetch animation when model is selected for instant playback later
             if (newModel && gift) {
               prefetchAnimation(gift, newModel);
+              
+              // Auto-fetch totalIssued for manual model selection
+              // Use fake link with number 1 to get total issued count
+              if (!totalIssued) {
+                // Get gift name without spaces for URL slug
+                const slugForUrl = gift.replace(/ /g, '');
+                console.log('[CellModal] Auto-fetching totalIssued for manually selected model:', { gift, model: newModel, slugForUrl });
+                
+                try {
+                  const details = await fetchNftDetails(slugForUrl, '1');
+                  if (details && details.totalIssued) {
+                    setTotalIssued(details.totalIssued);
+                    console.log('[CellModal] Auto-fetched totalIssued:', details.totalIssued);
+                  }
+                } catch (error) {
+                  console.warn('[CellModal] Failed to auto-fetch totalIssued:', error);
+                }
+              }
             }
           }}>
             <option value="">Выберите модель</option>

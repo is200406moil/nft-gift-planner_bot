@@ -35,6 +35,7 @@ html, body, #root {
   margin: 0;
   padding: 0;
   min-height: 100vh;
+  width: 100%;
   background-color: var(--bg-color);
   color: var(--text-color);
 }
@@ -45,12 +46,13 @@ html, body, #root {
   align-items: center;
   justify-content: flex-start;
   padding: 20px;
+  padding-top: 70px; /* Space for fixed toggle */
   background-color: var(--bg-color);
   color: var(--text-color);
   min-height: 100vh;
   box-sizing: border-box;
-  max-width: 800px;
-  margin: 0 auto;
+  width: 100%;
+  max-width: 100%;
 }
 
 /* Fixed animation toggle in top-right corner */
@@ -179,14 +181,19 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   align-items: center;
-  margin-top: 50px; /* Space for fixed toggle */
+  justify-content: center;
+  width: 100%;
+  max-width: 900px;
+  margin: 0 auto;
 }
 
 .grid-container {
-  display: flex;
-  flex-wrap: wrap;
-  width: 396px; /* 128px * 3 cells + 6px gaps */
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(120px, 1fr));
+  gap: 8px;
+  width: 100%;
+  max-width: 420px; /* 128px * 3 cells + 8px * 2 gaps + some padding */
+  margin: 0 auto;
   background-color: transparent;
 }
 
@@ -194,9 +201,10 @@ html, body, #root {
 .cell {
   width: 128px;
   height: 128px;
-  min-width: 128px;
-  min-height: 128px;
-  flex-shrink: 0;
+  min-width: 100px;
+  min-height: 100px;
+  aspect-ratio: 1;
+  justify-self: center;
   border: 2px solid var(--border-color);
   border-radius: 12px;
   margin: 0;
@@ -287,9 +295,9 @@ html, body, #root {
 .bottom-actions {
   display: flex;
   gap: 15px;
-  margin-top: 20px;
+  margin-top: 25px;
   width: 100%;
-  max-width: 396px;
+  max-width: 420px;
   flex-wrap: wrap;
   justify-content: center;
 }
@@ -490,15 +498,21 @@ button:focus-visible {
 
 /* Responsive Design */
 @media (max-width: 768px) {
+  .app {
+    padding: 15px;
+    padding-top: 60px;
+  }
+  
   .cell {
     width: 100px;
     height: 100px;
-    min-width: 100px;
-    min-height: 100px;
+    min-width: 90px;
+    min-height: 90px;
   }
   
   .grid-container {
-    width: 312px; /* 100px * 3 cells + 6px * 2 gaps */
+    max-width: 330px; /* 100px * 3 cells + 8px * 2 gaps + padding */
+    gap: 8px;
   }
   
   .control-button {
@@ -508,7 +522,7 @@ button:focus-visible {
   }
   
   .bottom-actions {
-    max-width: 312px;
+    max-width: 330px;
   }
   
   .action-button {
@@ -543,16 +557,39 @@ button:focus-visible {
     top: 6px;
     right: -28px;
   }
+  
+  .grid-controls {
+    gap: 12px;
+  }
 }
 
 @media (max-width: 400px) {
+  .cell {
+    width: 90px;
+    height: 90px;
+    min-width: 80px;
+    min-height: 80px;
+  }
+  
+  .grid-container {
+    max-width: 290px; /* 90px * 3 cells + 8px * 2 gaps */
+    gap: 6px;
+  }
+  
   .bottom-actions {
     flex-direction: column;
     align-items: stretch;
+    max-width: 290px;
   }
   
   .action-button {
     width: 100%;
     min-width: auto;
+  }
+  
+  .control-button {
+    width: 34px;
+    height: 34px;
+    font-size: 16px;
   }
 }
