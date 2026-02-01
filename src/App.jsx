@@ -185,66 +185,67 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
       {...listeners}
     >
       {cell ? (
-        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-          {cell?.pattern && cell?.gift && (
-            <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
+        <>
+          <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+            {cell?.pattern && cell?.gift && (
+              <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
+            )}
+            {cell?.gift && (
+              <>
+                {isPlaying && animationMode && (cell.model || giftId) ? (
+                  <TgsAnimation 
+                    gift={cell.gift} 
+                    model={cell.model}
+                    giftId={giftId}
+                  />
+                ) : imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt="gift"
+                    onError={(e) => {
+                      console.error('[SortableCell] Image load error:', imageUrl);
+                      e.target.style.display = 'none';
+                    }}
+                    style={{
+                      position: 'absolute',
+                      inset: '10%',
+                      width: '80%',
+                      height: '80%',
+                      objectFit: 'contain',
+                      zIndex: 2,
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      fontSize: '12px',
+                      textAlign: 'center',
+                      zIndex: 2,
+                      textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                    }}
+                  >
+                    {cell.gift}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          {/* Uniqueness Ribbon - moved outside overflow:hidden container */}
+          {cell?.gift && cell.totalIssued && (
+            <div 
+              className="uniqueness-ribbon"
+              style={{ background: ribbonGradient }}
+            >
+              1 из {formatNumber(cell.totalIssued)}
+            </div>
           )}
-          {cell?.gift && (
-            <>
-              {isPlaying && animationMode && (cell.model || giftId) ? (
-                <TgsAnimation 
-                  gift={cell.gift} 
-                  model={cell.model}
-                  giftId={giftId}
-                />
-              ) : imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt="gift"
-                  onError={(e) => {
-                    console.error('[SortableCell] Image load error:', imageUrl);
-                    e.target.style.display = 'none';
-                  }}
-                  style={{
-                    position: 'absolute',
-                    inset: '10%',
-                    width: '80%',
-                    height: '80%',
-                    objectFit: 'contain',
-                    zIndex: 2,
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    fontSize: '12px',
-                    textAlign: 'center',
-                    zIndex: 2,
-                    textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
-                  }}
-                >
-                  {cell.gift}
-                </div>
-              )}
-              
-              {/* Uniqueness Ribbon */}
-              {cell.totalIssued && (
-                <div 
-                  className="uniqueness-ribbon"
-                  style={{ background: ribbonGradient }}
-                >
-                  1 из {formatNumber(cell.totalIssued)}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        </>
       ) : (
         <span className="empty-cell">Пусто</span>
       )}
@@ -412,7 +413,14 @@ function App() {
   const parseLink = (link) => {
     const match = link.match(/t\.me\/nft\/(.+?)-(\d+)/);
     if (match) {
-      const name = match[1].replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
+      // Convert slug to gift name:
+      // 1. Replace dashes with spaces: "magic-potion" → "magic potion"
+      // 2. Insert space before capital letters: "InstantRamen" → "Instant Ramen"  
+      // 3. Capitalize each word: "instant ramen" → "Instant Ramen"
+      let name = match[1]
+        .replace(/-/g, ' ')
+        .replace(/([a-z])([A-Z])/g, '$1 $2') // Insert space before capitals
+        .replace(/\b\w/g, (l) => l.toUpperCase());
       const giftNumber = match[2];
       return { name, giftNumber, slug: match[1] };
     }
@@ -425,6 +433,7 @@ function App() {
    * - Markdown table: | Model | Diamonds 0.5% |
    * - Text format: Model: Diamonds 0.5%
    * - Quantity: X/Y issued or X/Y
+   * - HTML meta tags and page content
    */
   const parseNftPageContent = (text) => {
     const result = { model: '', backdrop: '', pattern: '', totalIssued: null };
@@ -432,8 +441,29 @@ function App() {
     // Log first 2000 chars of text for debugging
     console.log('[parseNftPageContent] Raw text (first 2000 chars):', text.substring(0, 2000));
     
+    // First try to extract from HTML meta description or og:description
+    const metaDescMatch = text.match(/<meta[^>]*(?:name=["']description["']|property=["']og:description["'])[^>]*content=["']([^"']+)["']/i);
+    const pageTextMatch = text.match(/<div[^>]*class="[^"]*tgme_page_description[^"]*"[^>]*>([^<]+)</i);
+    
+    let contentToParse = text;
+    if (metaDescMatch) {
+      console.log('[parseNftPageContent] Found meta description:', metaDescMatch[1]);
+      contentToParse = metaDescMatch[1] + '\n' + text;
+    }
+    if (pageTextMatch) {
+      console.log('[parseNftPageContent] Found page description:', pageTextMatch[1]);
+      contentToParse = pageTextMatch[1] + '\n' + contentToParse;
+    }
+    
+    // Also try to find content in script data
+    const scriptDataMatch = text.match(/data-webview-text="([^"]+)"/i);
+    if (scriptDataMatch) {
+      console.log('[parseNftPageContent] Found webview text:', scriptDataMatch[1]);
+      contentToParse = scriptDataMatch[1] + '\n' + contentToParse;
+    }
+    
     // Split into lines for line-by-line parsing
-    const lines = text.split('\n').map(l => l.trim());
+    const lines = contentToParse.split('\n').map(l => l.trim());
     console.log('[parseNftPageContent] Total lines:', lines.length);
     
     for (let i = 0; i < lines.length; i++) {
@@ -507,6 +537,20 @@ function App() {
       }
     }
     
+    // If we still haven't found totalIssued, try a global regex on the entire text
+    if (!result.totalIssued) {
+      // Look for patterns like "368 141/457 382" anywhere in the HTML
+      const globalMatch = text.match(/([\d\s,]+)\s*\/\s*([\d\s,]+)\s*(?:issued)?/i);
+      if (globalMatch && globalMatch[2]) {
+        const totalStr = globalMatch[2].replace(/[\s,]/g, '');
+        const total = parseInt(totalStr, 10);
+        if (!isNaN(total) && total > 0) {
+          result.totalIssued = total;
+          console.log('[parseNftPageContent] Found totalIssued via global match:', result.totalIssued);
+        }
+      }
+    }
+    
     console.log('[parseNftPageContent] Extracted result:', result);
     return result;
   };
@@ -520,27 +564,43 @@ function App() {
     console.log('[fetchNftDetails] Fetching:', url);
     
     try {
+      // Minimum length for valid HTML response (short responses are likely error pages)
+      const MIN_VALID_HTML_LENGTH = 100;
+      
       // Use a CORS proxy to fetch the Telegram page
       // Try multiple proxies in case one fails
       const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
         `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // JSON wrapper format
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, // Raw format as fallback
       ];
       
       let html = null;
       for (const proxyUrl of proxies) {
         try {
+          console.log('[fetchNftDetails] Trying proxy:', proxyUrl.split('?')[0]);
           const response = await fetch(proxyUrl, { 
             cache: 'no-store',
-            headers: { 'Accept': 'text/html' }
+            headers: { 'Accept': '*/*' }
           });
           if (response.ok) {
-            html = await response.text();
-            console.log('[fetchNftDetails] Fetched via proxy:', proxyUrl.split('?')[0]);
-            break;
+            const text = await response.text();
+            // allorigins.win /get endpoint returns JSON with 'contents' field
+            if (proxyUrl.includes('allorigins.win/get')) {
+              try {
+                const json = JSON.parse(text);
+                html = json.contents;
+              } catch {
+                html = text;
+              }
+            } else {
+              html = text;
+            }
+            console.log('[fetchNftDetails] Fetched via proxy:', proxyUrl.split('?')[0], 'Length:', html?.length);
+            if (html && html.length > MIN_VALID_HTML_LENGTH) break;
           }
         } catch (proxyError) {
-          console.warn('[fetchNftDetails] Proxy failed:', proxyError.message);
+          console.warn('[fetchNftDetails] Proxy failed:', proxyUrl.split('?')[0], proxyError.message);
         }
       }
       
@@ -978,7 +1038,7 @@ const CellModal = ({
   };
 
   // Handle gift changes - only reset dependent values when user manually changes gift
-  const handleGiftChange = (newGift) => {
+  const handleGiftChange = async (newGift) => {
     if (newGift !== gift) {
       setGift(newGift);
       // Reset dependent values only when user changes gift (not on initial load)
@@ -986,12 +1046,28 @@ const CellModal = ({
         setModel('');
         setPattern('');
         setBackdrop(null);
+        setTotalIssued(null); // Reset totalIssued when gift changes
       }
       setIsInitialLoad(false);
       setModels([]);
       setPatterns([]);
       if (newGift) {
         loadModelsAndPatterns(newGift);
+        
+        // Auto-fetch totalIssued for manually selected gift
+        // Use fake link with number 1 to get total issued count
+        const slugForUrl = newGift.replace(/ /g, '');
+        console.log('[CellModal] Auto-fetching totalIssued for manually selected gift:', { gift: newGift, slugForUrl });
+        
+        try {
+          const details = await fetchNftDetails(slugForUrl, '1');
+          if (details && details.totalIssued) {
+            setTotalIssued(details.totalIssued);
+            console.log('[CellModal] Auto-fetched totalIssued for gift:', details.totalIssued);
+          }
+        } catch (error) {
+          console.warn('[CellModal] Failed to auto-fetch totalIssued for gift:', error);
+        }
       }
     }
   };
@@ -1006,18 +1082,18 @@ const CellModal = ({
     const { name, giftNumber, slug } = parsed;
     console.log('[handleLink] Parsed link:', { name, giftNumber, slug });
     
-    // Set the gift name first
+    // Set the gift name first - this ensures gift is added even if details fetch fails
     setGift(name);
     setModels([]);
     setPatterns([]);
     setIsInitialLoad(false);
+    setParseStatus(`Подарок "${name}" добавлен. Загрузка деталей...`);
     
     // Load models and patterns for the gift
     await loadModelsAndPatterns(name);
     
     // Now fetch additional details from the NFT page
     setIsParsingLink(true);
-    setParseStatus('Загрузка данных NFT...');
     
     try {
       const details = await fetchNftDetails(slug, giftNumber);
@@ -1033,7 +1109,7 @@ const CellModal = ({
         // Set model if found and exists in models list
         if (details.model) {
           setModel(details.model);
-          setParseStatus(`Найдена модель: ${details.model}`);
+          setParseStatus(`Подарок "${name}" добавлен. Модель: ${details.model}`);
           // Prefetch animation
           prefetchAnimation(name, details.model);
         }
@@ -1057,14 +1133,16 @@ const CellModal = ({
         }
         
         if (!details.model && !details.pattern && !details.backdrop) {
-          setParseStatus('Базовый подарок (без улучшений)');
+          setParseStatus(`Подарок "${name}" добавлен (базовый, без улучшений)`);
         }
       } else {
-        setParseStatus('Не удалось загрузить детали NFT');
+        // Gift is still added, just couldn't get extra details
+        setParseStatus(`Подарок "${name}" добавлен. Детали NFT недоступны.`);
       }
     } catch (error) {
       console.error('[handleLink] Error fetching details:', error);
-      setParseStatus('Ошибка при загрузке данных');
+      // Gift is still added, just couldn't get extra details
+      setParseStatus(`Подарок "${name}" добавлен. Ошибка загрузки деталей.`);
     } finally {
       setIsParsingLink(false);
     }
@@ -1355,9 +1433,9 @@ const TgsAnimation = ({ gift, model, giftId }) => {
       ref={containerRef}
       style={{
         position: 'absolute',
-        inset: 0,
-        width: '100%',
-        height: '100%',
+        inset: '10%',
+        width: '80%',
+        height: '80%',
         zIndex: 2,
       }}
     />
