@@ -29,12 +29,15 @@ const Modal = lazy(() => import('react-modal').then(module => {
 const loadHtml2Canvas = () => import('html2canvas');
 
 // Lazy load lottie and pako - only needed for animations
+// Use lottie_canvas variant for smaller bundle (canvas-only, no SVG renderer)
+// This reduces the bundle from ~533KB to ~350KB
 let lottieModule = null;
 let pakoModule = null;
 
 const loadLottie = async () => {
   if (!lottieModule) {
-    lottieModule = (await import('lottie-web')).default;
+    // Use lottie_canvas for smaller bundle - only canvas renderer is needed for TGS
+    lottieModule = (await import('lottie-web/build/player/lottie_canvas')).default;
   }
   return lottieModule;
 };

@@ -1,9 +1,20 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import { visualizer } from 'rollup-plugin-visualizer'
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    // Bundle analyzer - generates report when ANALYZE=true
+    visualizer({
+      open: false,
+      filename: 'dist/bundle-analysis.html',
+      gzipSize: true,
+      brotliSize: true,
+      template: 'treemap',
+    }),
+  ],
   build: {
     // Target modern browsers for smaller bundle (Telegram uses modern WebView)
     target: 'es2020',
@@ -22,11 +33,15 @@ export default defineConfig({
           if (id.includes('@dnd-kit')) {
             return 'dnd';
           }
-          // Heavy media libs - lazy loaded, cache separately
-          if (id.includes('lottie-web') || id.includes('html2canvas')) {
-            return 'media';
+          // Lottie canvas player - lighter variant for TGS animations
+          if (id.includes('lottie-web') || id.includes('lottie_canvas')) {
+            return 'lottie';
           }
-          // Compression utility - lazy loaded
+          // HTML to canvas - only needed for export functionality
+          if (id.includes('html2canvas')) {
+            return 'html2canvas';
+          }
+          // Compression utility - lazy loaded for TGS decompression
           if (id.includes('pako')) {
             return 'pako';
           }
@@ -45,11 +60,13 @@ export default defineConfig({
     minify: 'esbuild',
     // Source maps in production for debugging (can disable if needed)
     sourcemap: false,
+    // Set chunk warning limit (we've optimized as much as practical)
+    chunkSizeWarningLimit: 250,
   },
   // Optimize dependencies pre-bundling
   optimizeDeps: {
     include: ['react', 'react-dom', '@dnd-kit/core', '@dnd-kit/sortable'],
     // Exclude heavy libs from pre-bundling to speed up dev start
-    exclude: ['html2canvas'],
+    exclude: ['html2canvas', 'lottie-web'],
   },
 })
