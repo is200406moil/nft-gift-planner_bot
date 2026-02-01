@@ -1,5 +1,6 @@
 // App.js - Main component for NFT Gift Planner
-import React, { useState, useEffect, useRef } from 'react';
+// Optimized for Telegram Mini App - instant loading and smooth performance
+import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -15,13 +16,35 @@ import {
   rectSortingStrategy,
   useSortable,
 } from '@dnd-kit/sortable';
-import './App.css'; // Assume CSS file for styles
-import Modal from 'react-modal'; // For modals, install react-modal
-import html2canvas from 'html2canvas'; // For export, install html2canvas
-import lottie from 'lottie-web';
-import pako from 'pako';
+import './App.css';
 
-Modal.setAppElement('#root');
+// Lazy load heavy libraries - they're not needed for initial render
+const Modal = lazy(() => import('react-modal').then(module => {
+  // Set app element after modal loads
+  module.default.setAppElement('#root');
+  return { default: module.default };
+}));
+
+// Lazy load html2canvas - only needed when exporting
+const loadHtml2Canvas = () => import('html2canvas');
+
+// Lazy load lottie and pako - only needed for animations
+let lottieModule = null;
+let pakoModule = null;
+
+const loadLottie = async () => {
+  if (!lottieModule) {
+    lottieModule = (await import('lottie-web')).default;
+  }
+  return lottieModule;
+};
+
+const loadPako = async () => {
+  if (!pakoModule) {
+    pakoModule = (await import('pako')).default;
+  }
+  return pakoModule;
+};
 
 const API_BASE = 'https://api.changes.tg';
 
@@ -36,6 +59,7 @@ async function prefetchAnimation(gift, model) {
   }
   
   try {
+    const pako = await loadPako();
     const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
     const response = await fetch(tgsUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
@@ -293,17 +317,23 @@ function App() {
 
   const loadInitialData = async () => {
     try {
-      // Load gifts from API - no hardcoded fallback
-      const giftsData = await safeFetch('/gifts', []);
+      // Load all required data in PARALLEL for faster startup
+      // Use Promise.allSettled to handle partial failures gracefully
+      const results = await Promise.allSettled([
+        safeFetch('/gifts', []),
+        safeFetch('/backdrops', []),
+        safeFetch('/names', {})
+      ]);
+      
+      // Extract values, using fallbacks for any failed requests
+      const giftsData = results[0].status === 'fulfilled' ? results[0].value : [];
+      const backdropsData = results[1].status === 'fulfilled' ? results[1].value : [];
+      const namesData = results[2].status === 'fulfilled' ? results[2].value : {};
+      
+      // Set gifts and backdrops immediately
       setGifts(giftsData);
-
-      // Load backdrops from API
-      const backdropsData = await safeFetch('/backdrops', []);
       setBackdrops(backdropsData);
-
-      // Load gift name → id mapping for /original endpoint fallback
-      // Try /names first (should be name → id), fall back to inverting /ids (which is id → name)
-      let namesData = await safeFetch('/names', {});
+      
       console.log('[loadInitialData] /names sample entries:', Object.entries(namesData).slice(0, 3));
       
       // Check if namesData looks like name → id (values should be numeric string IDs)
@@ -724,14 +754,15 @@ function App() {
     setGrid(Array.from({ length: rows }, () => Array(3).fill(null)));
   };
 
-  const exportGrid = () => {
+  const exportGrid = async () => {
     const gridElement = document.getElementById('grid');
-    html2canvas(gridElement).then((canvas) => {
-      const link = document.createElement('a');
-      link.download = 'nft_grid.png';
-      link.href = canvas.toDataURL();
-      link.click();
-    });
+    // Lazy load html2canvas only when needed
+    const html2canvas = (await loadHtml2Canvas()).default;
+    const canvas = await html2canvas(gridElement);
+    const link = document.createElement('a');
+    link.download = 'nft_grid.png';
+    link.href = canvas.toDataURL();
+    link.click();
   };
 
   // Get the active cell data for overlay
@@ -1179,92 +1210,94 @@ const CellModal = ({
   };
 
   return (
-    <Modal isOpen={isOpen} onRequestClose={onClose}>
-      <h2>Настройка ячейки</h2>
-      <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="t.me/nft/Name-123" />
-      <button onClick={handleLink} disabled={isParsingLink}>
-        {isParsingLink ? 'Загрузка...' : 'Распознать ссылку'}
-      </button>
-      {parseStatus && (
-        <div style={{ 
-          marginTop: '8px', 
-          padding: '8px', 
-          backgroundColor: 'rgba(100, 100, 255, 0.1)', 
-          borderRadius: '4px',
-          fontSize: '12px'
-        }}>
-          {parseStatus}
-        </div>
-      )}
+    <Suspense fallback={<div style={{ padding: '20px', textAlign: 'center' }}>Загрузка...</div>}>
+      <Modal isOpen={isOpen} onRequestClose={onClose}>
+        <h2>Настройка ячейки</h2>
+        <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="t.me/nft/Name-123" />
+        <button onClick={handleLink} disabled={isParsingLink}>
+          {isParsingLink ? 'Загрузка...' : 'Распознать ссылку'}
+        </button>
+        {parseStatus && (
+          <div style={{ 
+            marginTop: '8px', 
+            padding: '8px', 
+            backgroundColor: 'rgba(100, 100, 255, 0.1)', 
+            borderRadius: '4px',
+            fontSize: '12px'
+          }}>
+            {parseStatus}
+          </div>
+        )}
 
-      <select value={gift} onChange={(e) => handleGiftChange(e.target.value)}>
-        <option value="">Выберите подарок</option>
-        {gifts.map((g) => <option key={g} value={g}>{g}</option>)}
-      </select>
+        <select value={gift} onChange={(e) => handleGiftChange(e.target.value)}>
+          <option value="">Выберите подарок</option>
+          {gifts.map((g) => <option key={g} value={g}>{g}</option>)}
+        </select>
 
-      {gift && (
-        <>
-          <select value={model} onChange={async (e) => {
-            const newModel = e.target.value;
-            setModel(newModel);
-            // Prefetch animation when model is selected for instant playback later
-            if (newModel && gift) {
-              prefetchAnimation(gift, newModel);
-              
-              // Auto-fetch totalIssued for manual model selection
-              // Use fake link with number 1 to get total issued count
-              if (!totalIssued) {
-                // Get gift name without spaces for URL slug
-                const slugForUrl = gift.replace(/ /g, '');
-                console.log('[CellModal] Auto-fetching totalIssued for manually selected model:', { gift, model: newModel, slugForUrl });
+        {gift && (
+          <>
+            <select value={model} onChange={async (e) => {
+              const newModel = e.target.value;
+              setModel(newModel);
+              // Prefetch animation when model is selected for instant playback later
+              if (newModel && gift) {
+                prefetchAnimation(gift, newModel);
                 
-                try {
-                  const details = await fetchNftDetails(slugForUrl, '1');
-                  if (details && details.totalIssued) {
-                    setTotalIssued(details.totalIssued);
-                    console.log('[CellModal] Auto-fetched totalIssued:', details.totalIssued);
+                // Auto-fetch totalIssued for manual model selection
+                // Use fake link with number 1 to get total issued count
+                if (!totalIssued) {
+                  // Get gift name without spaces for URL slug
+                  const slugForUrl = gift.replace(/ /g, '');
+                  console.log('[CellModal] Auto-fetching totalIssued for manually selected model:', { gift, model: newModel, slugForUrl });
+                  
+                  try {
+                    const details = await fetchNftDetails(slugForUrl, '1');
+                    if (details && details.totalIssued) {
+                      setTotalIssued(details.totalIssued);
+                      console.log('[CellModal] Auto-fetched totalIssued:', details.totalIssued);
+                    }
+                  } catch (error) {
+                    console.warn('[CellModal] Failed to auto-fetch totalIssued:', error);
                   }
-                } catch (error) {
-                  console.warn('[CellModal] Failed to auto-fetch totalIssued:', error);
                 }
               }
-            }
-          }}>
-            <option value="">Выберите модель</option>
-            {models.map((m) => (
-              <option key={m.name} value={m.name}>{m.name} ({(m.rarityPermille / 10).toFixed(1)}‰)</option>
-            ))}
-          </select>
+            }}>
+              <option value="">Выберите модель</option>
+              {models.map((m) => (
+                <option key={m.name} value={m.name}>{m.name} ({(m.rarityPermille / 10).toFixed(1)}‰)</option>
+              ))}
+            </select>
 
-          <select
-            value={backdrop?.name || ''}
-            onChange={(e) => {
-              const selected = backdrops.find(b => b.name === e.target.value);
-              setBackdrop(selected || null);
-            }}
-          >
-            <option value="">Выберите фон</option>
-            {backdrops.map((b) => (
-              <option key={b.name} value={b.name}>
-                {b.name}
-              </option>
-            ))}
-          </select>
+            <select
+              value={backdrop?.name || ''}
+              onChange={(e) => {
+                const selected = backdrops.find(b => b.name === e.target.value);
+                setBackdrop(selected || null);
+              }}
+            >
+              <option value="">Выберите фон</option>
+              {backdrops.map((b) => (
+                <option key={b.name} value={b.name}>
+                  {b.name}
+                </option>
+              ))}
+            </select>
 
-          <select value={pattern} onChange={(e) => setPattern(e.target.value)}>
-            <option value="">Выберите паттерн</option>
-            {patterns.map((p) => (
-              <option key={p.name} value={p.name}>{p.name} ({(p.rarityPermille / 10).toFixed(1)}‰)</option>
-            ))}
-          </select>
-        </>
-      )}
+            <select value={pattern} onChange={(e) => setPattern(e.target.value)}>
+              <option value="">Выберите паттерн</option>
+              {patterns.map((p) => (
+                <option key={p.name} value={p.name}>{p.name} ({(p.rarityPermille / 10).toFixed(1)}‰)</option>
+              ))}
+            </select>
+          </>
+        )}
 
-      <button onClick={copyCell}>Копировать</button>
-      <button onClick={pasteCell}>Вставить</button>
-      <button onClick={handleSave}>Сохранить</button>
-      <button onClick={onClose}>Отмена</button>
-    </Modal>
+        <button onClick={copyCell}>Копировать</button>
+        <button onClick={pasteCell}>Вставить</button>
+        <button onClick={handleSave}>Сохранить</button>
+        <button onClick={onClose}>Отмена</button>
+      </Modal>
+    </Suspense>
   );
 };
 
@@ -1347,6 +1380,9 @@ const TgsAnimation = ({ gift, model, giftId }) => {
           animationRef.current.destroy();
           animationRef.current = null;
         }
+
+        // Lazy load lottie and pako
+        const [lottie, pako] = await Promise.all([loadLottie(), loadPako()]);
 
         let cacheKey;
         let tgsUrl;
