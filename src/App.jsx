@@ -185,66 +185,67 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
       {...listeners}
     >
       {cell ? (
-        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
-          {cell?.pattern && cell?.gift && (
-            <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
+        <>
+          <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+            {cell?.pattern && cell?.gift && (
+              <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
+            )}
+            {cell?.gift && (
+              <>
+                {isPlaying && animationMode && (cell.model || giftId) ? (
+                  <TgsAnimation 
+                    gift={cell.gift} 
+                    model={cell.model}
+                    giftId={giftId}
+                  />
+                ) : imageUrl ? (
+                  <img
+                    src={imageUrl}
+                    alt="gift"
+                    onError={(e) => {
+                      console.error('[SortableCell] Image load error:', imageUrl);
+                      e.target.style.display = 'none';
+                    }}
+                    style={{
+                      position: 'absolute',
+                      inset: '10%',
+                      width: '80%',
+                      height: '80%',
+                      objectFit: 'contain',
+                      zIndex: 2,
+                    }}
+                  />
+                ) : (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      color: 'rgba(255, 255, 255, 0.7)',
+                      fontSize: '12px',
+                      textAlign: 'center',
+                      zIndex: 2,
+                      textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                    }}
+                  >
+                    {cell.gift}
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+          {/* Uniqueness Ribbon - moved outside overflow:hidden container */}
+          {cell?.gift && cell.totalIssued && (
+            <div 
+              className="uniqueness-ribbon"
+              style={{ background: ribbonGradient }}
+            >
+              1 из {formatNumber(cell.totalIssued)}
+            </div>
           )}
-          {cell?.gift && (
-            <>
-              {isPlaying && animationMode && (cell.model || giftId) ? (
-                <TgsAnimation 
-                  gift={cell.gift} 
-                  model={cell.model}
-                  giftId={giftId}
-                />
-              ) : imageUrl ? (
-                <img
-                  src={imageUrl}
-                  alt="gift"
-                  onError={(e) => {
-                    console.error('[SortableCell] Image load error:', imageUrl);
-                    e.target.style.display = 'none';
-                  }}
-                  style={{
-                    position: 'absolute',
-                    inset: '10%',
-                    width: '80%',
-                    height: '80%',
-                    objectFit: 'contain',
-                    zIndex: 2,
-                  }}
-                />
-              ) : (
-                <div
-                  style={{
-                    position: 'absolute',
-                    inset: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    color: 'rgba(255, 255, 255, 0.7)',
-                    fontSize: '12px',
-                    textAlign: 'center',
-                    zIndex: 2,
-                    textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
-                  }}
-                >
-                  {cell.gift}
-                </div>
-              )}
-              
-              {/* Uniqueness Ribbon */}
-              {cell.totalIssued && (
-                <div 
-                  className="uniqueness-ribbon"
-                  style={{ background: ribbonGradient }}
-                >
-                  1 из {formatNumber(cell.totalIssued)}
-                </div>
-              )}
-            </>
-          )}
-        </div>
+        </>
       ) : (
         <span className="empty-cell">Пусто</span>
       )}
@@ -1355,9 +1356,9 @@ const TgsAnimation = ({ gift, model, giftId }) => {
       ref={containerRef}
       style={{
         position: 'absolute',
-        inset: 0,
-        width: '100%',
-        height: '100%',
+        inset: '10%',
+        width: '80%',
+        height: '80%',
         zIndex: 2,
       }}
     />
