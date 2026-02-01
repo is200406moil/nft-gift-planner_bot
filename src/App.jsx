@@ -1384,6 +1384,7 @@ const TgsAnimation = ({ gift, model, giftId }) => {
 
         if (!isMounted || !containerRef.current) return;
 
+        // Canvas renderer is faster for TGS animations with complex particle effects
         animationRef.current = lottie.loadAnimation({
           container: containerRef.current,
           renderer: 'canvas',
@@ -1393,8 +1394,7 @@ const TgsAnimation = ({ gift, model, giftId }) => {
           rendererSettings: {
             preserveAspectRatio: 'xMidYMid meet',
             clearCanvas: true,
-            progressiveLoad: true,
-            context: null
+            progressiveLoad: true
           }
         });
       } catch (error) {
