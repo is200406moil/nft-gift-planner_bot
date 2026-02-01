@@ -1030,7 +1030,7 @@ const CellModal = ({
   };
 
   // Handle gift changes - only reset dependent values when user manually changes gift
-  const handleGiftChange = (newGift) => {
+  const handleGiftChange = async (newGift) => {
     if (newGift !== gift) {
       setGift(newGift);
       // Reset dependent values only when user changes gift (not on initial load)
@@ -1038,12 +1038,28 @@ const CellModal = ({
         setModel('');
         setPattern('');
         setBackdrop(null);
+        setTotalIssued(null); // Reset totalIssued when gift changes
       }
       setIsInitialLoad(false);
       setModels([]);
       setPatterns([]);
       if (newGift) {
         loadModelsAndPatterns(newGift);
+        
+        // Auto-fetch totalIssued for manually selected gift
+        // Use fake link with number 1 to get total issued count
+        const slugForUrl = newGift.replace(/ /g, '');
+        console.log('[CellModal] Auto-fetching totalIssued for manually selected gift:', { gift: newGift, slugForUrl });
+        
+        try {
+          const details = await fetchNftDetails(slugForUrl, '1');
+          if (details && details.totalIssued) {
+            setTotalIssued(details.totalIssued);
+            console.log('[CellModal] Auto-fetched totalIssued for gift:', details.totalIssued);
+          }
+        } catch (error) {
+          console.warn('[CellModal] Failed to auto-fetch totalIssued for gift:', error);
+        }
       }
     }
   };
