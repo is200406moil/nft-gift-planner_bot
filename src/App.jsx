@@ -136,6 +136,23 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
 
   // Get image URL - model if selected, otherwise original fallback
   const imageUrl = cell?.gift ? getGiftImageUrl(cell.gift, cell.model, giftIds) : null;
+  
+  // Get giftId for non-upgraded gift animation (try multiple key variants)
+  const getGiftIdForAnimation = (giftName) => {
+    if (!giftName) return null;
+    const variants = [
+      giftName,
+      giftName.toLowerCase(),
+      normalizeGiftName(giftName),
+      aggressiveNormalize(giftName),
+    ];
+    for (const variant of variants) {
+      if (giftIds[variant]) return giftIds[variant];
+    }
+    return null;
+  };
+  
+  const giftId = cell?.gift && !cell?.model ? getGiftIdForAnimation(cell.gift) : null;
 
   return (
     <div
@@ -161,10 +178,11 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
           )}
           {cell?.gift && (
             <>
-              {isPlaying && animationMode && cell.model ? (
+              {isPlaying && animationMode && (cell.model || giftId) ? (
                 <TgsAnimation 
                   gift={cell.gift} 
                   model={cell.model}
+                  giftId={giftId}
                 />
               ) : imageUrl ? (
                 <img
@@ -441,16 +459,38 @@ function App() {
   };
 
   const playAllAnimations = () => {
-    // Find all cells with gifts and models
+    // Find all cells with gifts (with model OR with giftId for original animation)
     const animations = {};
+    
+    // Helper to get giftId
+    const getGiftIdForAnimation = (giftName) => {
+      if (!giftName) return null;
+      const variants = [
+        giftName,
+        giftName.toLowerCase(),
+        normalizeGiftName(giftName),
+        aggressiveNormalize(giftName),
+      ];
+      for (const variant of variants) {
+        if (giftIds[variant]) return giftIds[variant];
+      }
+      return null;
+    };
+    
     grid.forEach((row, rowIndex) => {
       row.forEach((cell, colIndex) => {
-        if (cell && cell.gift && cell.model) {
-          const key = `${rowIndex}-${colIndex}`;
-          animations[key] = true;
+        if (cell && cell.gift) {
+          // Animation available if model is selected OR giftId exists for original
+          const hasAnimation = cell.model || getGiftIdForAnimation(cell.gift);
+          if (hasAnimation) {
+            const key = `${rowIndex}-${colIndex}`;
+            animations[key] = true;
+          }
         }
       });
     });
+    
+    console.log('[playAllAnimations] Starting animations for cells:', Object.keys(animations));
     
     // Start all animations at once
     setPlayingAnimations(animations);
@@ -878,7 +918,7 @@ const PatternRings = ({ gift, pattern, cellId }) => {
   );
 };
 
-const TgsAnimation = ({ gift, model }) => {
+const TgsAnimation = ({ gift, model, giftId }) => {
   const containerRef = useRef(null);
   const animationRef = useRef(null);
 
@@ -894,13 +934,29 @@ const TgsAnimation = ({ gift, model }) => {
           animationRef.current = null;
         }
 
+        let cacheKey;
+        let tgsUrl;
+        
+        if (model) {
+          // Upgraded gift - use model endpoint
+          cacheKey = `model/${gift}/${model}`;
+          tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+        } else if (giftId) {
+          // Non-upgraded gift - use original endpoint
+          cacheKey = `original/${giftId}`;
+          tgsUrl = `${API_BASE}/original/${giftId}.tgs`;
+        } else {
+          console.warn('[TgsAnimation] Neither model nor giftId provided');
+          return;
+        }
+
+        console.log('[TgsAnimation] Loading animation:', { gift, model, giftId, tgsUrl });
+        
         // Try to get cached animation data first (instant playback)
-        const cacheKey = `${gift}/${model}`;
         let animationData = animationCache.get(cacheKey);
         
         if (!animationData) {
           // Not cached, fetch and cache it
-          const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
           const response = await fetch(tgsUrl);
           if (!response.ok) throw new Error(`Failed to load animation: ${response.status} ${response.statusText}`);
           
@@ -928,18 +984,28 @@ const TgsAnimation = ({ gift, model }) => {
           }
         });
       } catch (error) {
-        console.error(`Failed to load animation for ${gift}/${model}:`, error);
+        console.error(`[TgsAnimation] Failed to load animation:`, error);
         
         if (isMounted && containerRef.current) {
           containerRef.current.textContent = '';
           
-          const img = document.createElement('img');
-          img.src = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=256`;
-          img.alt = 'gift model';
-          img.style.width = '100%';
-          img.style.height = '100%';
-          img.style.objectFit = 'contain';
-          containerRef.current.appendChild(img);
+          // Fallback to PNG
+          let fallbackUrl;
+          if (model) {
+            fallbackUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=256`;
+          } else if (giftId) {
+            fallbackUrl = `${API_BASE}/original/${giftId}.png?size=256`;
+          }
+          
+          if (fallbackUrl) {
+            const img = document.createElement('img');
+            img.src = fallbackUrl;
+            img.alt = 'gift';
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'contain';
+            containerRef.current.appendChild(img);
+          }
         }
       }
     };
@@ -953,7 +1019,7 @@ const TgsAnimation = ({ gift, model }) => {
         animationRef.current = null;
       }
     };
-  }, [gift, model]);
+  }, [gift, model, giftId]);
 
   return (
     <div
