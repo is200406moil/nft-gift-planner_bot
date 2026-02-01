@@ -569,8 +569,11 @@ function App() {
       
       // Use a CORS proxy to fetch the Telegram page
       // Try multiple proxies in case one fails
+      // Priority: own API proxy first, then external proxies as fallback
       const proxies = [
-        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `/api/proxy?url=${encodeURIComponent(url)}`, // Own Vercel API proxy (most reliable)
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`, // codetabs proxy
+        `https://corsproxy.io/?${encodeURIComponent(url)}`, // corsproxy.io
         `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // JSON wrapper format
         `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, // Raw format as fallback
       ];
