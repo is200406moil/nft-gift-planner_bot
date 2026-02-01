@@ -1,6 +1,20 @@
 // App.js - Main component for NFT Gift Planner
 import React, { useState, useEffect, useRef } from 'react';
-import { DragDropContext, Droppable, Draggable } from "@hello-pangea/dnd";
+import {
+  DndContext,
+  closestCenter,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+  DragOverlay,
+} from '@dnd-kit/core';
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  rectSortingStrategy,
+  useSortable,
+} from '@dnd-kit/sortable';
 import './App.css'; // Assume CSS file for styles
 import Modal from 'react-modal'; // For modals, install react-modal
 import html2canvas from 'html2canvas'; // For export, install html2canvas
@@ -11,12 +25,232 @@ Modal.setAppElement('#root');
 
 const API_BASE = 'https://api.changes.tg';
 
-const fallbackGifts = ['Santa Hat', 'Signet Ring', 'Precious Peach', 'Plush Pepe', 'Spiced Wine', 'Jelly Bunny', 'Durov\'s Cap', 'Perfume Bottle', 'Eternal Rose', 'Berry Box', 'Vintage Cigar', 'Magic Potion', 'Kissed Frog', 'Hex Pot', 'Evil Eye', 'Sharp Tongue', 'Trapped Heart', 'Skull Flower', 'Scared Cat', 'Spy Agaric', 'Homemade Cake', 'Genie Lamp', 'Lunar Snake', 'Party Sparkler', 'Jester Hat', 'Witch Hat', 'Hanging Star', 'Love Candle', 'Cookie Heart', 'Desk Calendar', 'Jingle Bells', 'Snow Mittens', 'Voodoo Doll', 'Mad Pumpkin', 'Hypno Lollipop', 'B-Day Candle', 'Bunny Muffin', 'Astral Shard', 'Flying Broom', 'Crystal Ball', 'Eternal Candle', 'Swiss Watch', 'Ginger Cookie', 'Mini Oscar', 'Lol Pop', 'Ion Gem', 'Star Notepad', 'Loot Bag', 'Love Potion', 'Toy Bear', 'Diamond Ring', 'Sakura Flower', 'Sleigh Bell', 'Top Hat', 'Record Player', 'Winter Wreath', 'Snow Globe', 'Electric Skull', 'Tama Gadget', 'Candy Cane', 'Neko Helmet', 'Jack-in-the-Box', 'Easter Egg', 'Bonded Ring', 'Pet Snake', 'Snake Box', 'Xmas Stocking', 'Big Year', 'Holiday Drink', 'Gem Signet', 'Light Sword', 'Restless Jar', 'Nail Bracelet', 'Heroic Helmet', 'Bow Tie', 'Heart Locket', 'Lush Bouquet', 'Whip Cupcake', 'Joyful Bundle', 'Cupid Charm', 'Valentine Box', 'Snoop Dogg', 'Swag Bag', 'Snoop Cigar', 'Low Rider', 'Westside Sign', 'Stellar Rocket', 'Jolly Chimp', 'Moon Pendant', 'Ionic Dryer', 'Input Key', 'Mighty Arm', 'Artisan Brick', 'Clover Pin', 'Sky Stilettos', 'Fresh Socks', 'Happy Brownie', 'Ice Cream', 'Spring Basket', 'Instant Ramen', 'Faith Amulet', 'Mousse Cake', 'Bling Binky', 'Money Pot', 'Pretty Posy', 'Khabib\'s Papakha', 'UFC Strike', 'Victory Medal'];<grok-card data-id="e72d27" data-type="citation_card" data-plain-type="render_inline_citation" ></grok-card>
+// Animation cache for prefetched TGS data
+const animationCache = new Map();
 
+// Prefetch animation data for instant playback
+async function prefetchAnimation(gift, model) {
+  const cacheKey = `${gift}/${model}`;
+  if (animationCache.has(cacheKey)) {
+    return animationCache.get(cacheKey);
+  }
+  
+  try {
+    const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+    const response = await fetch(tgsUrl);
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const decompressed = pako.inflate(new Uint8Array(arrayBuffer), { to: 'string' });
+    const animationData = JSON.parse(decompressed);
+    
+    animationCache.set(cacheKey, animationData);
+    return animationData;
+  } catch (error) {
+    console.warn(`Failed to prefetch animation for ${cacheKey}:`, error);
+    return null;
+  }
+}
 
 function normalizeGiftName(name) {
   return name.toLowerCase().replace(/ /g, '-');
 }
+
+/**
+ * Aggressively normalize a string for key matching (removes all non-alphanumeric)
+ */
+function aggressiveNormalize(str) {
+  return str.toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+/**
+ * Get the image URL for a gift - uses model endpoint if model is selected, 
+ * otherwise falls back to /original endpoint using giftId.
+ * @param {string} gift - Gift name (e.g., "Santa Hat")
+ * @param {string|null} model - Model name if upgraded, null/empty if not
+ * @param {Object} giftIds - Map of gift names (normalized variants) to gift IDs
+ * @param {number} size - Image size (default 256)
+ * @returns {string|null} Image URL or null if gift ID not found
+ */
+function getGiftImageUrl(gift, model, giftIds, size = 256) {
+  if (!gift) return null;
+  
+  console.log('[getGiftImageUrl] called', { gift, model });
+
+  // If model is selected, use the model endpoint
+  if (model && model.trim() !== '') {
+    const normGift = normalizeGiftName(gift);
+    const url = `${API_BASE}/model/${normGift}/${model}.png?size=${size}`;
+    console.log('[getGiftImageUrl] → model URL:', url);
+    return url;
+  }
+
+  // Fallback to /original endpoint using gift ID
+  // Try multiple key variants to find giftId in the name→id mapping
+  const variants = [
+    gift,                                    // Original: "Santa Hat"
+    gift.toLowerCase(),                      // Lowercase: "santa hat"
+    normalizeGiftName(gift),                 // Dashed: "santa-hat"
+    aggressiveNormalize(gift),               // Aggressive: "santahat"
+    gift.replace(/ /g, ''),                  // No spaces: "SantaHat"
+    gift.toLowerCase().replace(/ /g, '_'),   // Underscored: "santa_hat"
+  ];
+
+  let giftId = null;
+  for (const variant of variants) {
+    if (giftIds[variant]) {
+      giftId = giftIds[variant];
+      console.log('[getGiftImageUrl] → found gift ID via variant:', variant, '→', giftId);
+      break;
+    }
+  }
+
+  if (giftId) {
+    const url = `${API_BASE}/original/${giftId}.png?size=${size}`;
+    console.log('[getGiftImageUrl] → original URL:', url);
+    return url;
+  }
+
+  console.warn('[getGiftImageUrl] No gift ID found for:', gift, '| Tried variants:', variants);
+  return null;
+}
+
+// Helper function to format numbers (1000 -> 1K, 1000000 -> 1M)
+function formatNumber(num) {
+  if (num >= 1000000) {
+    return (num / 1000000).toFixed(1).replace(/\.0$/, '') + 'M';
+  }
+  if (num >= 1000) {
+    return (num / 1000).toFixed(1).replace(/\.0$/, '') + 'K';
+  }
+  return num.toString();
+}
+
+// SortableCell component using @dnd-kit
+const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver, giftIds }) => {
+  const {
+    attributes,
+    listeners,
+    setNodeRef,
+    isDragging,
+  } = useSortable({ id });
+
+  // DO NOT apply transform - keep cell in original position during drag
+  // The ghost (DragOverlay) follows the cursor instead
+
+  // Determine cell state classes
+  const cellClasses = [
+    'cell',
+    isDragging ? 'cell-dragging' : '',
+    isOver && !isDragging ? 'cell-drop-target' : '',
+  ].filter(Boolean).join(' ');
+
+  // Get image URL - model if selected, otherwise original fallback
+  const imageUrl = cell?.gift ? getGiftImageUrl(cell.gift, cell.model, giftIds) : null;
+  
+  // Get giftId for non-upgraded gift animation (try multiple key variants)
+  const getGiftIdForAnimation = (giftName) => {
+    if (!giftName) return null;
+    const variants = [
+      giftName,
+      giftName.toLowerCase(),
+      normalizeGiftName(giftName),
+      aggressiveNormalize(giftName),
+    ];
+    for (const variant of variants) {
+      if (giftIds[variant]) return giftIds[variant];
+    }
+    return null;
+  };
+  
+  const giftId = cell?.gift && !cell?.model ? getGiftIdForAnimation(cell.gift) : null;
+  
+  // Determine cell background gradient
+  const cellBackground = cell?.backdrop 
+    ? `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#1a3a5a'}, ${cell.backdrop.hex?.centerColor || '#2a5a8a'})`
+    : 'var(--default-cell-gradient)';
+  
+  // Ribbon gradient from backdrop colors or default blue
+  const ribbonGradient = cell?.backdrop
+    ? `linear-gradient(135deg, ${cell.backdrop.hex?.edgeColor || '#007BFF'}, ${cell.backdrop.hex?.centerColor || '#00C6FF'})`
+    : 'var(--ribbon-gradient)';
+
+  return (
+    <div
+      ref={setNodeRef}
+      className={cellClasses}
+      onClick={() => onCellClick(rowIndex, colIndex)}
+      style={{ background: cellBackground }}
+      {...attributes}
+      {...listeners}
+    >
+      {cell ? (
+        <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+          {cell?.pattern && cell?.gift && (
+            <PatternRings gift={cell.gift} pattern={cell.pattern} cellId={id} />
+          )}
+          {cell?.gift && (
+            <>
+              {isPlaying && animationMode && (cell.model || giftId) ? (
+                <TgsAnimation 
+                  gift={cell.gift} 
+                  model={cell.model}
+                  giftId={giftId}
+                />
+              ) : imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt="gift"
+                  onError={(e) => {
+                    console.error('[SortableCell] Image load error:', imageUrl);
+                    e.target.style.display = 'none';
+                  }}
+                  style={{
+                    position: 'absolute',
+                    inset: '10%',
+                    width: '80%',
+                    height: '80%',
+                    objectFit: 'contain',
+                    zIndex: 2,
+                  }}
+                />
+              ) : (
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    color: 'rgba(255, 255, 255, 0.7)',
+                    fontSize: '12px',
+                    textAlign: 'center',
+                    zIndex: 2,
+                    textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                  }}
+                >
+                  {cell.gift}
+                </div>
+              )}
+              
+              {/* Uniqueness Ribbon */}
+              {cell.totalIssued && (
+                <div 
+                  className="uniqueness-ribbon"
+                  style={{ background: ribbonGradient }}
+                >
+                  1 из {formatNumber(cell.totalIssued)}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      ) : (
+        <span className="empty-cell">Пусто</span>
+      )}
+    </div>
+  );
+};
 
 function App() {
   const [rows, setRows] = useState(3); // Start with 3 rows
@@ -24,6 +258,7 @@ function App() {
   const [loading, setLoading] = useState(true);
   const [gifts, setGifts] = useState([]);
   const [backdrops, setBackdrops] = useState([]);
+  const [giftIds, setGiftIds] = useState({}); // Map of gift name -> gift ID for /original endpoint
   const [modalIsOpen, setModalIsOpen] = useState(false);
   const [currentCell, setCurrentCell] = useState({ row: -1, col: -1 });
   const [copiedCell, setCopiedCell] = useState(null);
@@ -31,6 +266,22 @@ function App() {
   const [patternsCache, setPatternsCache] = useState({});
   const [animationMode, setAnimationMode] = useState(false);
   const [playingAnimations, setPlayingAnimations] = useState({});
+  const [activeId, setActiveId] = useState(null);
+  const [overId, setOverId] = useState(null);
+
+  // Generate unique IDs for cells
+  const cellIds = grid.flat().map((_, index) => `cell-${index}`);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 8, // Require 8px movement before starting drag
+      },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    })
+  );
 
   useEffect(() => {
     loadInitialData();
@@ -39,26 +290,68 @@ function App() {
 
   const loadInitialData = async () => {
     try {
-      const giftsData = await safeFetch('/gifts', fallbackGifts);
+      // Load gifts from API - no hardcoded fallback
+      const giftsData = await safeFetch('/gifts', []);
       setGifts(giftsData);
-      sessionStorage.setItem('gifts', JSON.stringify(giftsData));
 
-      const backdropsData = await safeFetch('/backdrops', []); // General backdrops
+      // Load backdrops from API
+      const backdropsData = await safeFetch('/backdrops', []);
       setBackdrops(backdropsData);
-      sessionStorage.setItem('backdrops', JSON.stringify(backdropsData));
 
-      // Pre-fetch models for first 5 gifts
-      for (let i = 0; i < 5 && i < giftsData.length; i++) {
-        const gift = giftsData[i];
-        const norm = normalizeGiftName(gift);
-        const models = await safeFetch(`/models/${norm}?sorted`, []);
-        setModelsCache((prev) => ({ ...prev, [gift]: models }));
-        sessionStorage.setItem(`models_${gift}`, JSON.stringify(models));
-
-        const patterns = await safeFetch(`/patterns/${norm}?sorted`, []);
-        setPatternsCache((prev) => ({ ...prev, [gift]: patterns }));
-        sessionStorage.setItem(`patterns_${gift}`, JSON.stringify(patterns));
+      // Load gift name → id mapping for /original endpoint fallback
+      // Try /names first (should be name → id), fall back to inverting /ids (which is id → name)
+      let namesData = await safeFetch('/names', {});
+      console.log('[loadInitialData] /names sample entries:', Object.entries(namesData).slice(0, 3));
+      
+      // Check if namesData looks like name → id (values should be numeric string IDs)
+      const firstValue = Object.values(namesData)[0];
+      const looksLikeNameToId = typeof firstValue === 'string' && /^\d+$/.test(firstValue);
+      console.log('[loadInitialData] /names looks like name→id:', looksLikeNameToId);
+      
+      let nameToId = {};
+      
+      if (looksLikeNameToId) {
+        // /names is already name → id
+        nameToId = namesData;
+        console.log('[loadInitialData] Using /names directly as name→id');
+      } else {
+        // /names might be id → name (same as /ids), need to invert
+        // Or fetch /ids and invert it
+        const idsData = await safeFetch('/ids', {});
+        console.log('[loadInitialData] /ids sample entries:', Object.entries(idsData).slice(0, 3));
+        
+        // /ids is id → name, we need name → id
+        for (const [id, name] of Object.entries(idsData)) {
+          if (typeof name !== 'string') continue;
+          nameToId[name] = id;
+        }
+        console.log('[loadInitialData] Inverted /ids to name→id');
       }
+      
+      // Now normalize the keys for flexible lookup
+      const normalizedNameToId = {};
+      for (const [name, id] of Object.entries(nameToId)) {
+        if (typeof name !== 'string') continue;
+        
+        // Store multiple variants of each name for flexible matching
+        const variants = [
+          name,                                    // Original: "Santa Hat"
+          name.toLowerCase(),                      // Lowercase: "santa hat"
+          normalizeGiftName(name),                 // Dashed: "santa-hat"
+          aggressiveNormalize(name),               // Aggressive: "santahat"
+          name.replace(/ /g, ''),                  // No spaces: "SantaHat"
+          name.toLowerCase().replace(/ /g, '_'),   // Underscored: "santa_hat"
+        ];
+        
+        for (const variant of variants) {
+          normalizedNameToId[variant] = id;
+        }
+      }
+      
+      console.log('[loadInitialData] Normalized nameToId count:', Object.keys(normalizedNameToId).length);
+      console.log('[loadInitialData] Sample nameToId entries:', 
+        Object.entries(normalizedNameToId).slice(0, 8).map(([k, v]) => `${k} → ${v}`));
+      setGiftIds(normalizedNameToId);
 
       setLoading(false);
     } catch {
@@ -78,7 +371,7 @@ function App() {
           cache: 'no-store',
           mode: 'cors',
           headers: {
-            'Connection': 'close',          // ← отключает QUIC/HTTP3
+            'Connection': 'close',
             'User-Agent': 'NFT-Gift-Planner/1.0'
           }
         });
@@ -98,20 +391,6 @@ function App() {
       }
     }
     return fallback;
-  };
-
-  const addRow = () => {
-    // Limit to 5 rows when animation mode is active
-    if (animationMode && rows >= 5) return;
-    setRows(rows + 1);
-    setGrid([...grid, Array(3).fill(null)]);
-  };
-
-  const removeRow = () => {
-    if (rows <= 3) return;
-    const newGrid = grid.slice(0, -1); // Remove last row
-    setGrid(newGrid);
-    setRows(rows - 1);
   };
 
   const openModal = (row, col) => {
@@ -134,26 +413,187 @@ function App() {
     const match = link.match(/t\.me\/nft\/(.+?)-(\d+)/);
     if (match) {
       const name = match[1].replace(/-/g, ' ').replace(/\b\w/g, (l) => l.toUpperCase());
-      return name;
+      const giftNumber = match[2];
+      return { name, giftNumber, slug: match[1] };
     }
     return null;
   };
 
-  const onDragEnd = (result) => {
-    const { source, destination } = result;
-    if (!destination) return;
+  /**
+   * Parse NFT page content to extract Model, Backdrop, Symbol, and total issued count
+   * Handles multiple formats:
+   * - Markdown table: | Model | Diamonds 0.5% |
+   * - Text format: Model: Diamonds 0.5%
+   * - Quantity: X/Y issued or X/Y
+   */
+  const parseNftPageContent = (text) => {
+    const result = { model: '', backdrop: '', pattern: '', totalIssued: null };
+    
+    // Log first 2000 chars of text for debugging
+    console.log('[parseNftPageContent] Raw text (first 2000 chars):', text.substring(0, 2000));
+    
+    // Split into lines for line-by-line parsing
+    const lines = text.split('\n').map(l => l.trim());
+    console.log('[parseNftPageContent] Total lines:', lines.length);
+    
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const lineLower = line.toLowerCase();
+      
+      // Skip empty lines
+      if (!line) continue;
+      
+      // Check for Model
+      if (lineLower.includes('model') && !result.model) {
+        // Try markdown table format: | Model | Diamonds 0.5% |
+        let match = line.match(/\|\s*Model\s*\|\s*([^|]+?)\s*(?:\d+\.?\d*%\s*)?\|/i);
+        if (!match) {
+          // Try text format: Model: Diamonds 0.5%
+          match = line.match(/Model\s*[:|]\s*([^%\n]+?)(?:\s+\d+\.?\d*%|$)/i);
+        }
+        if (!match) {
+          // Try simple format without percentage
+          match = line.match(/Model\s*[:|]\s*(.+)/i);
+        }
+        if (match && match[1]) {
+          result.model = match[1].trim().replace(/\s*\d+\.?\d*%\s*$/, '').trim();
+          console.log('[parseNftPageContent] Found model on line', i, ':', result.model, '| Line:', line);
+        }
+      }
+      
+      // Check for Backdrop
+      if (lineLower.includes('backdrop') && !result.backdrop) {
+        let match = line.match(/\|\s*Backdrop\s*\|\s*([^|]+?)\s*(?:\d+\.?\d*%\s*)?\|/i);
+        if (!match) {
+          match = line.match(/Backdrop\s*[:|]\s*([^%\n]+?)(?:\s+\d+\.?\d*%|$)/i);
+        }
+        if (!match) {
+          match = line.match(/Backdrop\s*[:|]\s*(.+)/i);
+        }
+        if (match && match[1]) {
+          result.backdrop = match[1].trim().replace(/\s*\d+\.?\d*%\s*$/, '').trim();
+          console.log('[parseNftPageContent] Found backdrop on line', i, ':', result.backdrop, '| Line:', line);
+        }
+      }
+      
+      // Check for Symbol or Pattern
+      if ((lineLower.includes('symbol') || lineLower.includes('pattern')) && !result.pattern) {
+        let match = line.match(/\|\s*(?:Symbol|Pattern)\s*\|\s*([^|]+?)\s*(?:\d+\.?\d*%\s*)?\|/i);
+        if (!match) {
+          match = line.match(/(?:Symbol|Pattern)\s*[:|]\s*([^%\n]+?)(?:\s+\d+\.?\d*%|$)/i);
+        }
+        if (!match) {
+          match = line.match(/(?:Symbol|Pattern)\s*[:|]\s*(.+)/i);
+        }
+        if (match && match[1]) {
+          result.pattern = match[1].trim().replace(/\s*\d+\.?\d*%\s*$/, '').trim();
+          console.log('[parseNftPageContent] Found pattern on line', i, ':', result.pattern, '| Line:', line);
+        }
+      }
+      
+      // Check for Quantity / issued count (e.g., "367 993/457 382 issued" or "Quantity: 367 993/457 382")
+      if ((lineLower.includes('quantity') || lineLower.includes('issued') || line.includes('/')) && !result.totalIssued) {
+        // Try to match patterns like "367 993/457 382 issued" or "367,993/457,382"
+        let match = line.match(/[\d,\s]+\/\s*([\d,\s]+)/);
+        if (match && match[1]) {
+          // Remove spaces and commas, parse as number
+          const totalStr = match[1].replace(/[\s,]/g, '');
+          const total = parseInt(totalStr, 10);
+          if (!isNaN(total) && total > 0) {
+            result.totalIssued = total;
+            console.log('[parseNftPageContent] Found totalIssued on line', i, ':', result.totalIssued, '| Line:', line);
+          }
+        }
+      }
+    }
+    
+    console.log('[parseNftPageContent] Extracted result:', result);
+    return result;
+  };
 
-    const sourceRow = Math.floor(source.index / 3);
-    const sourceCol = source.index % 3;
-    const destRow = Math.floor(destination.index / 3);
-    const destCol = destination.index % 3;
+  /**
+   * Fetch NFT page and extract upgrade details
+   * Uses CORS proxy to bypass browser restrictions
+   */
+  const fetchNftDetails = async (slug, giftNumber) => {
+    const url = `https://t.me/nft/${slug}-${giftNumber}`;
+    console.log('[fetchNftDetails] Fetching:', url);
+    
+    try {
+      // Use a CORS proxy to fetch the Telegram page
+      // Try multiple proxies in case one fails
+      const proxies = [
+        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://corsproxy.io/?${encodeURIComponent(url)}`,
+      ];
+      
+      let html = null;
+      for (const proxyUrl of proxies) {
+        try {
+          const response = await fetch(proxyUrl, { 
+            cache: 'no-store',
+            headers: { 'Accept': 'text/html' }
+          });
+          if (response.ok) {
+            html = await response.text();
+            console.log('[fetchNftDetails] Fetched via proxy:', proxyUrl.split('?')[0]);
+            break;
+          }
+        } catch (proxyError) {
+          console.warn('[fetchNftDetails] Proxy failed:', proxyError.message);
+        }
+      }
+      
+      if (!html) {
+        console.warn('[fetchNftDetails] All proxies failed');
+        return null;
+      }
+      
+      // Parse the HTML to extract text content
+      // The page content is in meta tags or page body
+      const details = parseNftPageContent(html);
+      return details;
+    } catch (error) {
+      console.error('[fetchNftDetails] Error:', error);
+      return null;
+    }
+  };
 
-    // Create a deep copy of the grid to avoid mutation issues
+  const handleDragStart = (event) => {
+    setActiveId(event.active.id);
+  };
+
+  const handleDragOver = (event) => {
+    const { over } = event;
+    setOverId(over?.id || null);
+  };
+
+  const handleDragEnd = (event) => {
+    const { active, over } = event;
+    setActiveId(null);
+    setOverId(null);
+    
+    if (!over || active.id === over.id) return;
+
+    const activeIndex = parseInt(active.id.replace('cell-', ''), 10);
+    const overIndex = parseInt(over.id.replace('cell-', ''), 10);
+
+    const sourceRow = Math.floor(activeIndex / 3);
+    const sourceCol = activeIndex % 3;
+    const destRow = Math.floor(overIndex / 3);
+    const destCol = overIndex % 3;
+
+    // Swap cells
     const newGrid = grid.map(row => [...row]);
     const temp = newGrid[destRow][destCol];
     newGrid[destRow][destCol] = newGrid[sourceRow][sourceCol];
     newGrid[sourceRow][sourceCol] = temp;
     setGrid(newGrid);
+  };
+
+  const handleDragCancel = () => {
+    setActiveId(null);
+    setOverId(null);
   };
 
   const toggleAnimationMode = () => {
@@ -169,16 +609,38 @@ function App() {
   };
 
   const playAllAnimations = () => {
-    // Find all cells with gifts and models
+    // Find all cells with gifts (with model OR with giftId for original animation)
     const animations = {};
+    
+    // Helper to get giftId
+    const getGiftIdForAnimation = (giftName) => {
+      if (!giftName) return null;
+      const variants = [
+        giftName,
+        giftName.toLowerCase(),
+        normalizeGiftName(giftName),
+        aggressiveNormalize(giftName),
+      ];
+      for (const variant of variants) {
+        if (giftIds[variant]) return giftIds[variant];
+      }
+      return null;
+    };
+    
     grid.forEach((row, rowIndex) => {
       row.forEach((cell, colIndex) => {
-        if (cell && cell.gift && cell.model) {
-          const key = `${rowIndex}-${colIndex}`;
-          animations[key] = true;
+        if (cell && cell.gift) {
+          // Animation available if model is selected OR giftId exists for original
+          const hasAnimation = cell.model || getGiftIdForAnimation(cell.gift);
+          if (hasAnimation) {
+            const key = `${rowIndex}-${colIndex}`;
+            animations[key] = true;
+          }
         }
       });
     });
+    
+    console.log('[playAllAnimations] Starting animations for cells:', Object.keys(animations));
     
     // Start all animations at once
     setPlayingAnimations(animations);
@@ -207,119 +669,219 @@ function App() {
     });
   };
 
+  // Get the active cell data for overlay
+  const getActiveCellData = () => {
+    if (!activeId) return null;
+    const activeIndex = parseInt(activeId.replace('cell-', ''), 10);
+    const rowIndex = Math.floor(activeIndex / 3);
+    const colIndex = activeIndex % 3;
+    return grid[rowIndex]?.[colIndex];
+  };
+  
+  // Add row at top
+  const addRowTop = () => {
+    if (animationMode && rows >= 5) return;
+    setGrid(prev => [[null, null, null], ...prev]);
+    setRows(prev => prev + 1);
+  };
+  
+  // Remove row from top
+  const removeRowTop = () => {
+    if (rows <= 1) return;
+    setGrid(prev => prev.slice(1));
+    setRows(prev => prev - 1);
+  };
+  
+  // Add row at bottom
+  const addRowBottom = () => {
+    if (animationMode && rows >= 5) return;
+    setGrid(prev => [...prev, [null, null, null]]);
+    setRows(prev => prev + 1);
+  };
+  
+  // Remove row from bottom  
+  const removeRowBottom = () => {
+    if (rows <= 1) return;
+    setGrid(prev => prev.slice(0, -1));
+    setRows(prev => prev - 1);
+  };
+
   if (loading) {
-    return <div className="splash">Loading...</div>; // Add animation in CSS
+    return <div className="splash">Загрузка...</div>;
   }
 
   return (
     <div className="app">
-      <div className="controls">
-        <div className="animation-toggle-container">
-          <label>
-            <input
-              type="checkbox"
-              checked={animationMode}
-              onChange={toggleAnimationMode}
-            />
-            Анимация
-          </label>
-          <span 
-            className="tooltip-icon" 
-            title="ВНИМАНИЕ! При включенном режиме анимации сетка будет ограничена в 5 рядов."
-          >
-            ?
-          </span>
-        </div>
-        {animationMode && (
-          <button 
-            onClick={playAllAnimations} 
-            disabled={isAnyAnimationPlaying()}
-            className="animate-all-button"
-          >
-            Анимировать всё
-          </button>
-        )}
-        <button onClick={addRow} disabled={animationMode && rows >= 5}>
-          Добавить ряд
-        </button>
-        <button onClick={removeRow} disabled={rows <= 3}>
-          Удалить ряд
-        </button>
-        <button onClick={resetGrid}>Сброс</button>
-        <button onClick={exportGrid}>Экспорт</button>
+      {/* Fixed animation toggle in top-right corner */}
+      <div className="animation-toggle-fixed">
+        <label className="toggle-switch">
+          <input
+            type="checkbox"
+            checked={animationMode}
+            onChange={toggleAnimationMode}
+          />
+          <span className="toggle-slider"></span>
+        </label>
+        <span 
+          className="tooltip-icon" 
+          title="ВНИМАНИЕ! При включенном режиме анимации сетка будет ограничена в 5 рядов."
+        >
+          ?
+        </span>
       </div>
-      <DragDropContext onDragEnd={onDragEnd}>
-        <Droppable droppableId="grid" direction="horizontal" type="cell">
-          {(provided) => (
-            <div id="grid" className="grid" {...provided.droppableProps} ref={provided.innerRef}>
-              {grid.map((row, rowIndex) => (
-                <div key={rowIndex} className="row">
-                  {row.map((cell, colIndex) => {
-                    const index = rowIndex * 3 + colIndex;
-                    const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
-                    return (
-                      <Draggable key={index} draggableId={`cell-${index}`} index={index}>
-                        {(provided, snapshot) => (
-                          <div
-                            className={`cell ${snapshot.isDragging ? 'dragging' : ''}`}
-                            onClick={() => !cell && openModal(rowIndex, colIndex)}
-                            ref={provided.innerRef}
-                            {...provided.draggableProps}
-                            {...provided.dragHandleProps}
-                          >
-                            {cell ? (
-                              <div style={{ position: 'relative', width: '100%', height: '100%' }}>
-                                {cell.backdrop && (
-                                  <div
-                                    style={{
-                                      position: 'absolute',
-                                      inset: 0,
-                                      background: `linear-gradient(to bottom, ${cell.backdrop.hex?.edgeColor || '#000'}, ${cell.backdrop.hex?.centerColor || '#333'})`,
-                                    }}
-                                  />
-                                )}
-                                {cell?.pattern && cell?.gift && (
-                                  <PatternRings gift={cell.gift} pattern={cell.pattern} />
-                                )}
-                                {cell?.gift && cell?.model && (
-                                  <>
-                                    {isPlaying && animationMode ? (
-                                      <TgsAnimation 
-                                        gift={cell.gift} 
-                                        model={cell.model}
-                                      />
-                                    ) : (
-                                      <img
-                                        src={`${API_BASE}/model/${normalizeGiftName(cell.gift)}/${cell.model}.png?size=64`}
-                                        alt="gift model"
-                                        style={{
-                                          position: 'absolute',
-                                          inset: 0,
-                                          width: '100%',
-                                          height: '100%',
-                                          objectFit: 'contain',
-                                          zIndex: 2,
-                                        }}
-                                      />
-                                    )}
-                                  </>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="empty-cell">Empty</span>
-                            )}
-                          </div>
-                        )}
-                      </Draggable>
-                    );
-                  })}
-                </div>
-              ))}
-              {provided.placeholder}
+      
+      <div className="grid-wrapper">
+        {/* Top row controls */}
+        <div className="grid-controls">
+          <button 
+            className="control-button" 
+            onClick={addRowTop}
+            disabled={animationMode && rows >= 5}
+            title="Добавить ряд сверху"
+          >
+            +
+          </button>
+          <button 
+            className="control-button play-button" 
+            onClick={playAllAnimations}
+            disabled={!animationMode || isAnyAnimationPlaying()}
+            title="Запустить анимацию"
+          >
+            ▶
+          </button>
+          <button 
+            className="control-button" 
+            onClick={removeRowTop}
+            disabled={rows <= 1}
+            title="Удалить ряд сверху"
+          >
+            −
+          </button>
+        </div>
+        
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragOver={handleDragOver}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          <SortableContext items={cellIds} strategy={rectSortingStrategy}>
+            <div id="grid" className="grid-container">
+              {grid.flat().map((cell, flatIndex) => {
+                const rowIndex = Math.floor(flatIndex / 3);
+                const colIndex = flatIndex % 3;
+                const isPlaying = playingAnimations[`${rowIndex}-${colIndex}`];
+                const cellId = `cell-${flatIndex}`;
+                return (
+                  <SortableCell
+                    key={cellId}
+                    id={cellId}
+                    cell={cell}
+                    rowIndex={rowIndex}
+                    colIndex={colIndex}
+                    isPlaying={isPlaying}
+                    animationMode={animationMode}
+                    onCellClick={openModal}
+                    isOver={overId === cellId && activeId !== cellId}
+                    giftIds={giftIds}
+                  />
+                );
+              })}
             </div>
-          )}
-        </Droppable>
-      </DragDropContext>
+          </SortableContext>
+          <DragOverlay dropAnimation={null}>
+            {activeId ? (
+              (() => {
+                const cellData = getActiveCellData();
+                const overlayBackground = cellData?.backdrop 
+                  ? `linear-gradient(to bottom, ${cellData.backdrop.hex?.edgeColor || '#1a3a5a'}, ${cellData.backdrop.hex?.centerColor || '#2a5a8a'})`
+                  : 'var(--default-cell-gradient)';
+                const overlayImageUrl = cellData?.gift ? getGiftImageUrl(cellData.gift, cellData.model, giftIds) : null;
+                return (
+                  <div className="cell cell-overlay" style={{ background: overlayBackground }}>
+                    {cellData ? (
+                      <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
+                        {cellData?.gift && overlayImageUrl ? (
+                          <img
+                            src={overlayImageUrl}
+                            alt="gift"
+                            style={{
+                              position: 'absolute',
+                              inset: '10%',
+                              width: '80%',
+                              height: '80%',
+                              objectFit: 'contain',
+                              zIndex: 2,
+                            }}
+                          />
+                        ) : cellData?.gift ? (
+                          <div
+                            style={{
+                              position: 'absolute',
+                              inset: 0,
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: 'rgba(255, 255, 255, 0.7)',
+                              fontSize: '12px',
+                              textAlign: 'center',
+                              zIndex: 2,
+                            }}
+                          >
+                            {cellData.gift}
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="empty-cell">Пусто</span>
+                    )}
+                  </div>
+                );
+              })()
+            ) : null}
+          </DragOverlay>
+        </DndContext>
+        
+        {/* Bottom row controls */}
+        <div className="grid-controls">
+          <button 
+            className="control-button" 
+            onClick={addRowBottom}
+            disabled={animationMode && rows >= 5}
+            title="Добавить ряд снизу"
+          >
+            +
+          </button>
+          <button 
+            className="control-button play-button" 
+            onClick={playAllAnimations}
+            disabled={!animationMode || isAnyAnimationPlaying()}
+            title="Запустить анимацию"
+          >
+            ▶
+          </button>
+          <button 
+            className="control-button" 
+            onClick={removeRowBottom}
+            disabled={rows <= 1}
+            title="Удалить ряд снизу"
+          >
+            −
+          </button>
+        </div>
+        
+        {/* Bottom action buttons */}
+        <div className="bottom-actions">
+          <button className="action-button export-button" onClick={exportGrid}>
+            Сохранить
+          </button>
+          <button className="action-button clear-button" onClick={resetGrid}>
+            Очистить
+          </button>
+        </div>
+      </div>
 
       <CellModal
         isOpen={modalIsOpen}
@@ -334,6 +896,7 @@ function App() {
         normalizeGiftName={normalizeGiftName}
         safeFetch={safeFetch}
         parseLink={parseLink}
+        fetchNftDetails={fetchNftDetails}
         copiedCell={copiedCell}
         setCopiedCell={setCopiedCell}
         initialData={grid[currentCell.row]?.[currentCell.col] || null}
@@ -355,17 +918,45 @@ const CellModal = ({
   normalizeGiftName,
   safeFetch,
   parseLink,
+  fetchNftDetails,
   copiedCell,
   setCopiedCell,
   initialData,
 }) => {
   const [link, setLink] = useState('');
-  const [gift, setGift] = useState(initialData?.gift || '');
-  const [model, setModel] = useState(initialData?.model || '');
-  const [backdrop, setBackdrop] = useState(initialData?.backdrop || null);
-  const [pattern, setPattern] = useState(initialData?.pattern || '');
+  const [gift, setGift] = useState('');
+  const [model, setModel] = useState('');
+  const [backdrop, setBackdrop] = useState(null);
+  const [pattern, setPattern] = useState('');
+  const [totalIssued, setTotalIssued] = useState(null);
   const [models, setModels] = useState([]);
   const [patterns, setPatterns] = useState([]);
+  const [isInitialLoad, setIsInitialLoad] = useState(true);
+  const [isParsingLink, setIsParsingLink] = useState(false);
+  const [parseStatus, setParseStatus] = useState('');
+
+  // Reset modal state when it opens or when initialData changes
+  useEffect(() => {
+    if (isOpen) {
+      setLink('');
+      setGift(initialData?.gift || '');
+      setModel(initialData?.model || '');
+      setBackdrop(initialData?.backdrop || null);
+      setPattern(initialData?.pattern || '');
+      setTotalIssued(initialData?.totalIssued || null);
+      setModels([]);
+      setPatterns([]);
+      setIsInitialLoad(true);
+      setIsParsingLink(false);
+      setParseStatus('');
+      
+      // Load models and patterns for existing gift without resetting values
+      if (initialData?.gift) {
+        loadModelsAndPatterns(initialData.gift);
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen, initialData]);
 
   const loadModelsAndPatterns = async (selectedGift) => {
     const norm = normalizeGiftName(selectedGift);
@@ -386,36 +977,96 @@ const CellModal = ({
     setPatterns(patternsData);
   };
 
-  useEffect(() => {
-    if (gift) {
-      // При смене подарка сбрасываем всё зависимое
-      setModel('');
-      setPattern('');
-      setBackdrop(null);
-  
-      // Сбрасываем локальные списки (если они есть)
+  // Handle gift changes - only reset dependent values when user manually changes gift
+  const handleGiftChange = (newGift) => {
+    if (newGift !== gift) {
+      setGift(newGift);
+      // Reset dependent values only when user changes gift (not on initial load)
+      if (!isInitialLoad) {
+        setModel('');
+        setPattern('');
+        setBackdrop(null);
+      }
+      setIsInitialLoad(false);
       setModels([]);
       setPatterns([]);
-  
-      // Загружаем новые списки для текущего gift
-      loadModelsAndPatterns(gift); // твоя существующая функция
-  
-      // Если хочешь — можно сбросить и backdrops здесь, но обычно они общие
-    } else {
-      // Если подарок очищен — тоже сбрасываем
-      setModel('');
-      setPattern('');
-      setBackdrop(null);
-      setModels([]);
-      setPatterns([]);
+      if (newGift) {
+        loadModelsAndPatterns(newGift);
+      }
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gift]);
+  };
 
-  const handleLink = () => {
+  const handleLink = async () => {
     const parsed = parseLink(link);
-    if (parsed) {
-      setGift(parsed);
+    if (!parsed) {
+      setParseStatus('Неверный формат ссылки');
+      return;
+    }
+
+    const { name, giftNumber, slug } = parsed;
+    console.log('[handleLink] Parsed link:', { name, giftNumber, slug });
+    
+    // Set the gift name first
+    setGift(name);
+    setModels([]);
+    setPatterns([]);
+    setIsInitialLoad(false);
+    
+    // Load models and patterns for the gift
+    await loadModelsAndPatterns(name);
+    
+    // Now fetch additional details from the NFT page
+    setIsParsingLink(true);
+    setParseStatus('Загрузка данных NFT...');
+    
+    try {
+      const details = await fetchNftDetails(slug, giftNumber);
+      
+      if (details) {
+        console.log('[handleLink] Fetched NFT details:', details);
+        
+        // Set totalIssued for uniqueness ribbon
+        if (details.totalIssued) {
+          setTotalIssued(details.totalIssued);
+        }
+        
+        // Set model if found and exists in models list
+        if (details.model) {
+          setModel(details.model);
+          setParseStatus(`Найдена модель: ${details.model}`);
+          // Prefetch animation
+          prefetchAnimation(name, details.model);
+        }
+        
+        // Set pattern/symbol if found
+        if (details.pattern) {
+          setPattern(details.pattern);
+        }
+        
+        // Set backdrop if found - need to find matching backdrop from backdrops list
+        if (details.backdrop) {
+          const matchingBackdrop = backdrops.find(b => 
+            b.name.toLowerCase() === details.backdrop.toLowerCase() ||
+            b.name.toLowerCase().includes(details.backdrop.toLowerCase()) ||
+            details.backdrop.toLowerCase().includes(b.name.toLowerCase())
+          );
+          if (matchingBackdrop) {
+            setBackdrop(matchingBackdrop);
+            setParseStatus(prev => prev + `, фон: ${matchingBackdrop.name}`);
+          }
+        }
+        
+        if (!details.model && !details.pattern && !details.backdrop) {
+          setParseStatus('Базовый подарок (без улучшений)');
+        }
+      } else {
+        setParseStatus('Не удалось загрузить детали NFT');
+      }
+    } catch (error) {
+      console.error('[handleLink] Error fetching details:', error);
+      setParseStatus('Ошибка при загрузке данных');
+    } finally {
+      setIsParsingLink(false);
     }
   };
 
@@ -425,38 +1076,75 @@ const CellModal = ({
 
   const pasteCell = () => {
     if (copiedCell) {
+      // When pasting, we want to keep the pasted values, so use isInitialLoad-like behavior
       setGift(copiedCell.gift);
       setModel(copiedCell.model);
       setBackdrop(copiedCell.backdrop);
       setPattern(copiedCell.pattern);
+      setModels([]);
+      setPatterns([]);
+      if (copiedCell.gift) {
+        loadModelsAndPatterns(copiedCell.gift);
+      }
     }
   };
 
   const handleSave = () => {
-    onSave({ gift, model, backdrop, pattern });
+    onSave({ gift, model, backdrop, pattern, totalIssued });
   };
 
   return (
     <Modal isOpen={isOpen} onRequestClose={onClose}>
       <h2>Настройка ячейки</h2>
       <input value={link} onChange={(e) => setLink(e.target.value)} placeholder="t.me/nft/Name-123" />
-      <button onClick={handleLink}>Распознать ссылку</button>
+      <button onClick={handleLink} disabled={isParsingLink}>
+        {isParsingLink ? 'Загрузка...' : 'Распознать ссылку'}
+      </button>
+      {parseStatus && (
+        <div style={{ 
+          marginTop: '8px', 
+          padding: '8px', 
+          backgroundColor: 'rgba(100, 100, 255, 0.1)', 
+          borderRadius: '4px',
+          fontSize: '12px'
+        }}>
+          {parseStatus}
+        </div>
+      )}
 
-      <select value={gift} onChange={(e) => {
-        setModel('');
-        setPattern('');
-        setBackdrop(null);
-        setModels([]);
-        setPatterns([]);
-        setGift(e.target.value);  // после сброса устанавливаем новый gift
-      }}>
+      <select value={gift} onChange={(e) => handleGiftChange(e.target.value)}>
         <option value="">Выберите подарок</option>
         {gifts.map((g) => <option key={g} value={g}>{g}</option>)}
       </select>
 
       {gift && (
         <>
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
+          <select value={model} onChange={async (e) => {
+            const newModel = e.target.value;
+            setModel(newModel);
+            // Prefetch animation when model is selected for instant playback later
+            if (newModel && gift) {
+              prefetchAnimation(gift, newModel);
+              
+              // Auto-fetch totalIssued for manual model selection
+              // Use fake link with number 1 to get total issued count
+              if (!totalIssued) {
+                // Get gift name without spaces for URL slug
+                const slugForUrl = gift.replace(/ /g, '');
+                console.log('[CellModal] Auto-fetching totalIssued for manually selected model:', { gift, model: newModel, slugForUrl });
+                
+                try {
+                  const details = await fetchNftDetails(slugForUrl, '1');
+                  if (details && details.totalIssued) {
+                    setTotalIssued(details.totalIssued);
+                    console.log('[CellModal] Auto-fetched totalIssued:', details.totalIssued);
+                  }
+                } catch (error) {
+                  console.warn('[CellModal] Failed to auto-fetch totalIssued:', error);
+                }
+              }
+            }
+          }}>
             <option value="">Выберите модель</option>
             {models.map((m) => (
               <option key={m.name} value={m.name}>{m.name} ({(m.rarityPermille / 10).toFixed(1)}‰)</option>
@@ -473,7 +1161,7 @@ const CellModal = ({
             <option value="">Выберите фон</option>
             {backdrops.map((b) => (
               <option key={b.name} value={b.name}>
-                {b.name} {b.hex?.centerColor ? `(${b.hex.centerColor})` : ''}
+                {b.name}
               </option>
             ))}
           </select>
@@ -495,42 +1183,37 @@ const CellModal = ({
   );
 };
 
-const PatternRings = ({ gift, pattern }) => {
+const PatternRings = ({ gift, pattern, cellId }) => {
   const svgRef = useRef(null);
+  const uniqueId = `pattern-symbol-${cellId}`;
 
   useEffect(() => {
     if (!svgRef.current || !gift || !pattern) {
-      if (svgRef.current) svgRef.current.innerHTML = '';  // очистка если нет паттерна
+      if (svgRef.current) svgRef.current.innerHTML = '';
       return;
     }
 
     const svg = svgRef.current;
-    svg.innerHTML = ''; // очищаем предыдущие символы
+    svg.innerHTML = '';
 
-    // Определяем <defs> если нужно (можно вынести выше)
-    if (!svg.querySelector('#pattern-symbol')) {
-      const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
-      const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
-      img.setAttribute('id', 'pattern-symbol');
-      img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=64`);
-      img.setAttribute('width', '32');
-      img.setAttribute('height', '32');
-      defs.appendChild(img);
-      svg.appendChild(defs);
-    }
+    const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
+    const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
+    img.setAttribute('id', uniqueId);
+    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=256`);
+    img.setAttribute('width', '32');
+    img.setAttribute('height', '32');
+    defs.appendChild(img);
+    svg.appendChild(defs);
 
     const centerX = 128;
     const centerY = 128;
     const symbolSize = 32;
-    const rings = [50, 90, 130, 170]; // радиусы колец — регулируй расстояния
-    const baseAngleStep = 30;          // базовый шаг угла — чем меньше, тем плотнее
+    const rings = [50, 90, 130, 170];
+    const baseAngleStep = 30;
 
     rings.forEach((radius, ringIndex) => {
-      // Шахматный сдвиг: на чётных кольцах смещаем на половину шага
       const offset = ringIndex % 2 === 0 ? 0 : baseAngleStep / 2;
-
-      // Количество символов на кольце — больше на внешних
-      const numSymbols = Math.floor((2 * Math.PI * radius) / (symbolSize * 1.4)); // расстояние между символами ~1.4×размер
+      const numSymbols = Math.floor((2 * Math.PI * radius) / (symbolSize * 1.4));
       const angleStep = 360 / numSymbols;
 
       for (let i = 0; i < numSymbols; i++) {
@@ -539,13 +1222,13 @@ const PatternRings = ({ gift, pattern }) => {
         const y = centerY + radius * Math.sin(angle) - symbolSize / 2;
 
         const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
-        use.setAttribute('href', '#pattern-symbol');
+        use.setAttribute('href', `#${uniqueId}`);
         use.setAttribute('x', x);
         use.setAttribute('y', y);
         svg.appendChild(use);
       }
     });
-  }, [gift, pattern]);
+  }, [gift, pattern, uniqueId]);
 
   return (
     <svg
@@ -558,13 +1241,13 @@ const PatternRings = ({ gift, pattern }) => {
         inset: 0,
         zIndex: 1,
         pointerEvents: 'none',
-        opacity: 0.18, // общая прозрачность колец
+        opacity: 0.18,
       }}
     />
   );
 };
 
-const TgsAnimation = ({ gift, model }) => {
+const TgsAnimation = ({ gift, model, giftId }) => {
   const containerRef = useRef(null);
   const animationRef = useRef(null);
 
@@ -575,30 +1258,47 @@ const TgsAnimation = ({ gift, model }) => {
       if (!containerRef.current) return;
 
       try {
-        // Clean up previous animation if exists
         if (animationRef.current) {
           animationRef.current.destroy();
           animationRef.current = null;
         }
 
-        // Load TGS format from API (default format, gzipped Lottie JSON)
-        const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+        let cacheKey;
+        let tgsUrl;
         
-        const response = await fetch(tgsUrl);
-        if (!response.ok) throw new Error(`Failed to load animation: ${response.status} ${response.statusText}`);
+        if (model) {
+          // Upgraded gift - use model endpoint
+          cacheKey = `model/${gift}/${model}`;
+          tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+        } else if (giftId) {
+          // Non-upgraded gift - use original endpoint
+          cacheKey = `original/${giftId}`;
+          tgsUrl = `${API_BASE}/original/${giftId}.tgs`;
+        } else {
+          console.warn('[TgsAnimation] Neither model nor giftId provided');
+          return;
+        }
+
+        console.log('[TgsAnimation] Loading animation:', { gift, model, giftId, tgsUrl });
         
-        // Get the TGS file as ArrayBuffer
-        const arrayBuffer = await response.arrayBuffer();
+        // Try to get cached animation data first (instant playback)
+        let animationData = animationCache.get(cacheKey);
         
-        // Decompress the gzipped data
-        const decompressed = pako.inflate(new Uint8Array(arrayBuffer), { to: 'string' });
-        
-        // Parse the decompressed JSON
-        const animationData = JSON.parse(decompressed);
+        if (!animationData) {
+          // Not cached, fetch and cache it
+          const response = await fetch(tgsUrl);
+          if (!response.ok) throw new Error(`Failed to load animation: ${response.status} ${response.statusText}`);
+          
+          const arrayBuffer = await response.arrayBuffer();
+          const decompressed = pako.inflate(new Uint8Array(arrayBuffer), { to: 'string' });
+          animationData = JSON.parse(decompressed);
+          
+          // Cache for future use
+          animationCache.set(cacheKey, animationData);
+        }
 
         if (!isMounted || !containerRef.current) return;
 
-        // Create lottie animation
         animationRef.current = lottie.loadAnimation({
           container: containerRef.current,
           renderer: 'svg',
@@ -613,21 +1313,28 @@ const TgsAnimation = ({ gift, model }) => {
           }
         });
       } catch (error) {
-        console.error(`Failed to load animation for ${gift}/${model}:`, error);
+        console.error(`[TgsAnimation] Failed to load animation:`, error);
         
-        // Fallback to static image if animation fails
         if (isMounted && containerRef.current) {
-          // Clear container safely
           containerRef.current.textContent = '';
           
-          // Create img element safely to avoid XSS
-          const img = document.createElement('img');
-          img.src = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=64`;
-          img.alt = 'gift model';
-          img.style.width = '100%';
-          img.style.height = '100%';
-          img.style.objectFit = 'contain';
-          containerRef.current.appendChild(img);
+          // Fallback to PNG
+          let fallbackUrl;
+          if (model) {
+            fallbackUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=256`;
+          } else if (giftId) {
+            fallbackUrl = `${API_BASE}/original/${giftId}.png?size=256`;
+          }
+          
+          if (fallbackUrl) {
+            const img = document.createElement('img');
+            img.src = fallbackUrl;
+            img.alt = 'gift';
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'contain';
+            containerRef.current.appendChild(img);
+          }
         }
       }
     };
@@ -641,7 +1348,7 @@ const TgsAnimation = ({ gift, model }) => {
         animationRef.current = null;
       }
     };
-  }, [gift, model]);
+  }, [gift, model, giftId]);
 
   return (
     <div
