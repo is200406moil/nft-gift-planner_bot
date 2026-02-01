@@ -1,4 +1,6 @@
-/* App.css */
+/* App.css - Optimized for Telegram Mini App */
+
+/* Base theme variables */
 :root {
   --bg-color: #ffffff;
   --text-color: #213547;
@@ -14,6 +16,7 @@
   --default-cell-gradient: linear-gradient(to bottom, #1a3a5a, #2a5a8a);
 }
 
+/* Dark mode */
 @media (prefers-color-scheme: dark) {
   :root {
     --bg-color: #1a1a1a;
@@ -31,6 +34,18 @@
   }
 }
 
+/* Telegram Mini App theme integration - overrides system theme when in Telegram */
+body.tg-webapp {
+  --bg-color: var(--tg-theme-bg-color, #1a1a1a);
+  --text-color: var(--tg-theme-text-color, rgba(255, 255, 255, 0.87));
+  --button-bg: var(--tg-theme-button-color, #007BFF);
+  --button-hover: var(--tg-theme-button-color, #535bf2);
+  --border-color: var(--tg-theme-hint-color, #444);
+  --cell-bg: var(--tg-theme-secondary-bg-color, #2a2a2a);
+  --modal-bg: var(--tg-theme-secondary-bg-color, #2a2a2a);
+}
+
+/* Global styles optimized for Mini App */
 html, body, #root {
   margin: 0;
   padding: 0;
@@ -38,6 +53,14 @@ html, body, #root {
   width: 100%;
   background-color: var(--bg-color);
   color: var(--text-color);
+  /* Prevent pull-to-refresh on mobile */
+  overscroll-behavior: none;
+  /* Smooth scrolling */
+  scroll-behavior: smooth;
+  /* Better touch handling */
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  touch-action: pan-y;
 }
 
 .app {
@@ -53,6 +76,8 @@ html, body, #root {
   box-sizing: border-box;
   width: 100%;
   max-width: 100%;
+  /* GPU acceleration for smoother scrolling */
+  transform: translateZ(0);
 }
 
 /* Fixed animation toggle in top-right corner */
@@ -195,6 +220,9 @@ html, body, #root {
   max-width: 420px; /* 128px * 3 cells + 8px * 2 gaps + some padding */
   margin: 0 auto;
   background-color: transparent;
+  /* GPU acceleration for smoother animations */
+  transform: translateZ(0);
+  will-change: contents;
 }
 
 /* Cell styles */
@@ -215,11 +243,22 @@ html, body, #root {
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease, opacity 0.15s ease;
   box-sizing: border-box;
   overflow: hidden;
+  /* GPU acceleration for smoother drag/drop */
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  /* Better touch responsiveness */
+  -webkit-touch-callout: none;
+  user-select: none;
 }
 
 .cell:hover:not(.cell-dragging):not(.cell-drop-target) {
   transform: scale(1.02);
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+/* Active state for touch devices */
+.cell:active:not(.cell-dragging):not(.cell-drop-target) {
+  transform: scale(0.98);
 }
 
 /* Dragging cell - "pressed" effect with semi-transparency */

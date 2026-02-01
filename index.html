@@ -3,14 +3,96 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>nft-gift-planner</title>
+    <!-- Telegram Mini App optimized viewport -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- Telegram theme color support -->
+    <meta name="theme-color" content="#1a1a1a" />
+    <!-- iOS Safari optimizations for Mini Apps -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <title>NFT Gift Planner</title>
+    
+    <!-- Telegram WebApp SDK - must load FIRST for instant Mini App initialization -->
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    
     <!-- Preconnect to API for faster resource loading -->
     <link rel="preconnect" href="https://api.changes.tg" crossorigin />
     <link rel="dns-prefetch" href="https://api.changes.tg" />
+    <!-- Preconnect to Telegram CDN for faster SDK loading -->
+    <link rel="preconnect" href="https://telegram.org" crossorigin />
+    
+    <!-- Inline critical CSS for instant visual feedback -->
+    <style>
+      /* Critical CSS - renders immediately before JS loads */
+      :root {
+        --bg-color: #1a1a1a;
+        --text-color: rgba(255, 255, 255, 0.87);
+      }
+      @media (prefers-color-scheme: light) {
+        :root {
+          --bg-color: #ffffff;
+          --text-color: #213547;
+        }
+      }
+      html, body, #root {
+        margin: 0;
+        padding: 0;
+        min-height: 100vh;
+        width: 100%;
+        background-color: var(--bg-color);
+        color: var(--text-color);
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        overflow-x: hidden;
+        -webkit-tap-highlight-color: transparent;
+        -webkit-touch-callout: none;
+        touch-action: pan-y;
+      }
+      /* Telegram Mini App specific - use tg theme colors when available */
+      body.tg-webapp {
+        background-color: var(--tg-theme-bg-color, var(--bg-color));
+        color: var(--tg-theme-text-color, var(--text-color));
+      }
+      /* Initial loading state - shows instantly */
+      .initial-loader {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        font-size: 18px;
+        animation: pulse 1.2s ease-in-out infinite;
+      }
+      @keyframes pulse {
+        0%, 100% { opacity: 1; }
+        50% { opacity: 0.4; }
+      }
+    </style>
   </head>
   <body>
-    <div id="root"></div>
+    <!-- Initial loader shown while JS loads - provides instant visual feedback -->
+    <div id="root"><div class="initial-loader">Загрузка...</div></div>
+    
+    <!-- Initialize Telegram WebApp immediately -->
+    <script>
+      // Mark body for Telegram-specific styling
+      if (window.Telegram && window.Telegram.WebApp) {
+        document.body.classList.add('tg-webapp');
+        // Apply Telegram theme colors immediately
+        const tg = window.Telegram.WebApp;
+        if (tg.themeParams.bg_color) {
+          document.documentElement.style.setProperty('--tg-theme-bg-color', tg.themeParams.bg_color);
+        }
+        if (tg.themeParams.text_color) {
+          document.documentElement.style.setProperty('--tg-theme-text-color', tg.themeParams.text_color);
+        }
+        // Expand Mini App to full height immediately
+        tg.expand();
+        // Disable vertical swipes for smoother scrolling
+        if (tg.disableVerticalSwipes) {
+          tg.disableVerticalSwipes();
+        }
+      }
+    </script>
+    
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
