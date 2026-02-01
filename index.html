@@ -90,6 +90,9 @@
         if (tg.disableVerticalSwipes) {
           tg.disableVerticalSwipes();
         }
+        // Call ready() immediately to prevent blank screen / infinite loading
+        // This signals to Telegram that the app container is available
+        tg.ready();
       }
     </script>
     
