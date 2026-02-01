@@ -426,6 +426,7 @@ function App() {
    * - Markdown table: | Model | Diamonds 0.5% |
    * - Text format: Model: Diamonds 0.5%
    * - Quantity: X/Y issued or X/Y
+   * - HTML meta tags and page content
    */
   const parseNftPageContent = (text) => {
     const result = { model: '', backdrop: '', pattern: '', totalIssued: null };
@@ -433,8 +434,29 @@ function App() {
     // Log first 2000 chars of text for debugging
     console.log('[parseNftPageContent] Raw text (first 2000 chars):', text.substring(0, 2000));
     
+    // First try to extract from HTML meta description or og:description
+    const metaDescMatch = text.match(/<meta[^>]*(?:name=["']description["']|property=["']og:description["'])[^>]*content=["']([^"']+)["']/i);
+    const pageTextMatch = text.match(/<div[^>]*class="[^"]*tgme_page_description[^"]*"[^>]*>([^<]+)</i);
+    
+    let contentToParse = text;
+    if (metaDescMatch) {
+      console.log('[parseNftPageContent] Found meta description:', metaDescMatch[1]);
+      contentToParse = metaDescMatch[1] + '\n' + text;
+    }
+    if (pageTextMatch) {
+      console.log('[parseNftPageContent] Found page description:', pageTextMatch[1]);
+      contentToParse = pageTextMatch[1] + '\n' + contentToParse;
+    }
+    
+    // Also try to find content in script data
+    const scriptDataMatch = text.match(/data-webview-text="([^"]+)"/i);
+    if (scriptDataMatch) {
+      console.log('[parseNftPageContent] Found webview text:', scriptDataMatch[1]);
+      contentToParse = scriptDataMatch[1] + '\n' + contentToParse;
+    }
+    
     // Split into lines for line-by-line parsing
-    const lines = text.split('\n').map(l => l.trim());
+    const lines = contentToParse.split('\n').map(l => l.trim());
     console.log('[parseNftPageContent] Total lines:', lines.length);
     
     for (let i = 0; i < lines.length; i++) {
@@ -508,6 +530,20 @@ function App() {
       }
     }
     
+    // If we still haven't found totalIssued, try a global regex on the entire text
+    if (!result.totalIssued) {
+      // Look for patterns like "368 141/457 382" anywhere in the HTML
+      const globalMatch = text.match(/([\d\s,]+)\s*\/\s*([\d\s,]+)\s*(?:issued)?/i);
+      if (globalMatch && globalMatch[2]) {
+        const totalStr = globalMatch[2].replace(/[\s,]/g, '');
+        const total = parseInt(totalStr, 10);
+        if (!isNaN(total) && total > 0) {
+          result.totalIssued = total;
+          console.log('[parseNftPageContent] Found totalIssued via global match:', result.totalIssued);
+        }
+      }
+    }
+    
     console.log('[parseNftPageContent] Extracted result:', result);
     return result;
   };
@@ -524,24 +560,37 @@ function App() {
       // Use a CORS proxy to fetch the Telegram page
       // Try multiple proxies in case one fails
       const proxies = [
-        `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`,
+        `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`, // JSON wrapper format
         `https://corsproxy.io/?${encodeURIComponent(url)}`,
+        `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(url)}`,
       ];
       
       let html = null;
       for (const proxyUrl of proxies) {
         try {
+          console.log('[fetchNftDetails] Trying proxy:', proxyUrl.split('?')[0]);
           const response = await fetch(proxyUrl, { 
             cache: 'no-store',
-            headers: { 'Accept': 'text/html' }
+            headers: { 'Accept': '*/*' }
           });
           if (response.ok) {
-            html = await response.text();
-            console.log('[fetchNftDetails] Fetched via proxy:', proxyUrl.split('?')[0]);
-            break;
+            const text = await response.text();
+            // allorigins.win /get endpoint returns JSON with 'contents' field
+            if (proxyUrl.includes('allorigins.win/get')) {
+              try {
+                const json = JSON.parse(text);
+                html = json.contents;
+              } catch {
+                html = text;
+              }
+            } else {
+              html = text;
+            }
+            console.log('[fetchNftDetails] Fetched via proxy:', proxyUrl.split('?')[0], 'Length:', html?.length);
+            if (html && html.length > 100) break;
           }
         } catch (proxyError) {
-          console.warn('[fetchNftDetails] Proxy failed:', proxyError.message);
+          console.warn('[fetchNftDetails] Proxy failed:', proxyUrl.split('?')[0], proxyError.message);
         }
       }
       
