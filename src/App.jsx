@@ -202,6 +202,8 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                   <img
                     src={imageUrl}
                     alt="gift"
+                    loading="eager"
+                    decoding="async"
                     onError={(e) => {
                       console.error('[SortableCell] Image load error:', imageUrl);
                       e.target.style.display = 'none';
@@ -870,6 +872,8 @@ function App() {
                           <img
                             src={overlayImageUrl}
                             alt="gift"
+                            loading="eager"
+                            decoding="async"
                             style={{
                               position: 'absolute',
                               inset: '10%',
@@ -1382,7 +1386,7 @@ const TgsAnimation = ({ gift, model, giftId }) => {
 
         animationRef.current = lottie.loadAnimation({
           container: containerRef.current,
-          renderer: 'svg',
+          renderer: 'canvas',
           loop: true,
           autoplay: true,
           animationData: animationData,
@@ -1390,7 +1394,7 @@ const TgsAnimation = ({ gift, model, giftId }) => {
             preserveAspectRatio: 'xMidYMid meet',
             clearCanvas: true,
             progressiveLoad: true,
-            hideOnTransparent: true
+            context: null
           }
         });
       } catch (error) {
