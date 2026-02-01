@@ -68,48 +68,50 @@ function aggressiveNormalize(str) {
  * otherwise falls back to /original endpoint using giftId.
  * @param {string} gift - Gift name (e.g., "Santa Hat")
  * @param {string|null} model - Model name if upgraded, null/empty if not
- * @param {Object} giftIds - Map of gift names to gift IDs (with normalized variants)
+ * @param {Object} giftIds - Map of gift names (normalized variants) to gift IDs
  * @param {number} size - Image size (default 256)
  * @returns {string|null} Image URL or null if gift ID not found
  */
 function getGiftImageUrl(gift, model, giftIds, size = 256) {
-  console.log('[getGiftImageUrl] called', { gift, model, giftIdKeysCount: Object.keys(giftIds).length });
+  if (!gift) return null;
+  
+  console.log('[getGiftImageUrl] called', { gift, model });
 
-  if (model) {
-    const url = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=${size}`;
-    console.log('[getGiftImageUrl] → using model URL:', url);
+  // If model is selected, use the model endpoint
+  if (model && model.trim() !== '') {
+    const normGift = normalizeGiftName(gift);
+    const url = `${API_BASE}/model/${normGift}/${model}.png?size=${size}`;
+    console.log('[getGiftImageUrl] → model URL:', url);
     return url;
   }
 
-  // Try multiple key variants to find giftId
+  // Fallback to /original endpoint using gift ID
+  // Try multiple key variants to find giftId in the name→id mapping
   const variants = [
     gift,                                    // Original: "Santa Hat"
-    aggressiveNormalize(gift),               // Aggressive: "santahat"
     gift.toLowerCase(),                      // Lowercase: "santa hat"
     normalizeGiftName(gift),                 // Dashed: "santa-hat"
+    aggressiveNormalize(gift),               // Aggressive: "santahat"
     gift.replace(/ /g, ''),                  // No spaces: "SantaHat"
     gift.toLowerCase().replace(/ /g, '_'),   // Underscored: "santa_hat"
   ];
-
-  console.log('[getGiftImageUrl] trying variants for gift:', gift, '→', variants);
-  console.log('[getGiftImageUrl] sample giftIds keys:', Object.keys(giftIds).slice(0, 10));
 
   let giftId = null;
   for (const variant of variants) {
     if (giftIds[variant]) {
       giftId = giftIds[variant];
-      console.log('[getGiftImageUrl] → found via variant:', variant, '→', giftId);
+      console.log('[getGiftImageUrl] → found gift ID via variant:', variant, '→', giftId);
       break;
     }
   }
 
   if (giftId) {
     const url = `${API_BASE}/original/${giftId}.png?size=${size}`;
-    console.log('[getGiftImageUrl] → using original URL:', url);
+    console.log('[getGiftImageUrl] → original URL:', url);
     return url;
   }
 
-  console.warn('[getGiftImageUrl] No giftId found for:', gift);
+  console.warn('[getGiftImageUrl] No gift ID found for:', gift, '| Tried variants:', variants);
   return null;
 }
 
@@ -255,23 +257,60 @@ function App() {
       const backdropsData = await safeFetch('/backdrops', []);
       setBackdrops(backdropsData);
 
-      // Load gift ID mapping for /original endpoint fallback
-      const idsData = await safeFetch('/ids', {});
-      console.log('[loadInitialData] Raw idsData keys sample:', Object.keys(idsData).slice(0, 10));
+      // Load gift name → id mapping for /original endpoint fallback
+      // Try /names first (should be name → id), fall back to inverting /ids (which is id → name)
+      let namesData = await safeFetch('/names', {});
+      console.log('[loadInitialData] /names sample entries:', Object.entries(namesData).slice(0, 3));
       
-      // Normalize the keys for flexible lookup
-      const normalizedIds = {};
-      for (const [key, id] of Object.entries(idsData)) {
-        // Store multiple variants of each key for flexible matching
-        normalizedIds[key] = id;                                    // Original
-        normalizedIds[key.toLowerCase()] = id;                      // Lowercase
-        normalizedIds[normalizeGiftName(key)] = id;                 // Dashed lowercase
-        normalizedIds[aggressiveNormalize(key)] = id;               // Aggressive (alphanumeric only)
-        normalizedIds[key.replace(/ /g, '')] = id;                  // No spaces
-        normalizedIds[key.toLowerCase().replace(/ /g, '_')] = id;   // Underscored lowercase
+      // Check if namesData looks like name → id (values should be numeric string IDs)
+      const firstValue = Object.values(namesData)[0];
+      const looksLikeNameToId = typeof firstValue === 'string' && /^\d+$/.test(firstValue);
+      console.log('[loadInitialData] /names looks like name→id:', looksLikeNameToId);
+      
+      let nameToId = {};
+      
+      if (looksLikeNameToId) {
+        // /names is already name → id
+        nameToId = namesData;
+        console.log('[loadInitialData] Using /names directly as name→id');
+      } else {
+        // /names might be id → name (same as /ids), need to invert
+        // Or fetch /ids and invert it
+        const idsData = await safeFetch('/ids', {});
+        console.log('[loadInitialData] /ids sample entries:', Object.entries(idsData).slice(0, 3));
+        
+        // /ids is id → name, we need name → id
+        for (const [id, name] of Object.entries(idsData)) {
+          if (typeof name !== 'string') continue;
+          nameToId[name] = id;
+        }
+        console.log('[loadInitialData] Inverted /ids to name→id');
       }
-      console.log('[loadInitialData] Normalized giftIds count:', Object.keys(normalizedIds).length);
-      setGiftIds(normalizedIds);
+      
+      // Now normalize the keys for flexible lookup
+      const normalizedNameToId = {};
+      for (const [name, id] of Object.entries(nameToId)) {
+        if (typeof name !== 'string') continue;
+        
+        // Store multiple variants of each name for flexible matching
+        const variants = [
+          name,                                    // Original: "Santa Hat"
+          name.toLowerCase(),                      // Lowercase: "santa hat"
+          normalizeGiftName(name),                 // Dashed: "santa-hat"
+          aggressiveNormalize(name),               // Aggressive: "santahat"
+          name.replace(/ /g, ''),                  // No spaces: "SantaHat"
+          name.toLowerCase().replace(/ /g, '_'),   // Underscored: "santa_hat"
+        ];
+        
+        for (const variant of variants) {
+          normalizedNameToId[variant] = id;
+        }
+      }
+      
+      console.log('[loadInitialData] Normalized nameToId count:', Object.keys(normalizedNameToId).length);
+      console.log('[loadInitialData] Sample nameToId entries:', 
+        Object.entries(normalizedNameToId).slice(0, 8).map(([k, v]) => `${k} → ${v}`));
+      setGiftIds(normalizedNameToId);
 
       setLoading(false);
     } catch {
