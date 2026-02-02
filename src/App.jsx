@@ -338,6 +338,20 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const handleSaveToTelegram = useCallback(() => {
+    const payload = {
+      rows,
+      animationMode,
+      grid,
+    };
+    try {
+      window.Telegram?.WebApp?.sendData(JSON.stringify(payload));
+    } catch (error) {
+      console.warn('[handleSaveToTelegram] sendData failed, falling back to console', error);
+      console.log('Payload:', payload);
+    }
+  }, [grid, rows, animationMode]);
+
   useEffect(() => {
     const webApp = window.Telegram?.WebApp;
     if (!webApp) return;
@@ -866,20 +880,6 @@ function App() {
     });
     setSelectedCell({ row: -1, col: -1 });
   };
-
-  const handleSaveToTelegram = useCallback(() => {
-    const payload = {
-      rows,
-      animationMode,
-      grid,
-    };
-    try {
-      window.Telegram?.WebApp?.sendData(JSON.stringify(payload));
-    } catch (error) {
-      console.warn('[handleSaveToTelegram] sendData failed, falling back to console', error);
-      console.log('Payload:', payload);
-    }
-  }, [grid, rows, animationMode]);
 
   if (loading) {
     return (
