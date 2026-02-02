@@ -226,11 +226,11 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                     model={cell.model}
                     giftId={giftId}
                   />
-                ) : imageUrl ? (
+                ) : imageUrl && imageLoadReady ? (
                   <img
                     src={imageUrl}
                     alt="gift"
-                    loading={imageLoadReady ? 'eager' : 'lazy'}
+                    loading="eager"
                     decoding="async"
                     onError={(e) => {
                       console.error('[SortableCell] Image load error:', imageUrl);
@@ -337,10 +337,14 @@ function App() {
 
   useEffect(() => {
     loadInitialData();
-    const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
-    return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    if (loading) return;
+    const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
+    return () => clearTimeout(timer);
+  }, [loading]);
 
   const handleSaveToTelegram = useCallback(() => {
     const payload = {
@@ -967,20 +971,22 @@ function App() {
                     {cellData ? (
                       <div style={{ position: 'relative', width: '100%', height: '100%', overflow: 'hidden' }}>
                         {cellData?.gift && overlayImageUrl ? (
-                          <img
-                            src={overlayImageUrl}
-                            alt="gift"
-                            loading={imageLoadReady ? 'eager' : 'lazy'}
-                            decoding="async"
-                            style={{
-                              position: 'absolute',
-                              inset: '10%',
-                              width: '80%',
-                              height: '80%',
-                              objectFit: 'contain',
-                              zIndex: 2,
-                            }}
-                          />
+                          imageLoadReady ? (
+                            <img
+                              src={overlayImageUrl}
+                              alt="gift"
+                              loading="eager"
+                              decoding="async"
+                              style={{
+                                position: 'absolute',
+                                inset: '10%',
+                                width: '80%',
+                                height: '80%',
+                                objectFit: 'contain',
+                                zIndex: 2,
+                              }}
+                            />
+                          ) : null
                         ) : cellData?.gift ? (
                           <div
                             style={{
