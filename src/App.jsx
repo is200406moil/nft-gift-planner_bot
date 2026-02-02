@@ -320,7 +320,6 @@ function App() {
   const [overId, setOverId] = useState(null);
   const telegramRef = useRef(null);
   const [imageLoadReady, setImageLoadReady] = useState(false);
-  const imageLoadTimerRef = useRef(null);
 
   // Generate unique IDs for cells
   const cellIds = grid.flat().map((_, index) => `cell-${index}`);
@@ -342,17 +341,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (imageLoadTimerRef.current) return;
-    imageLoadTimerRef.current = setTimeout(() => {
-      setImageLoadReady(true);
-      imageLoadTimerRef.current = null;
-    }, IMAGE_LOAD_DELAY_MS);
-    return () => {
-      if (imageLoadTimerRef.current) {
-        clearTimeout(imageLoadTimerRef.current);
-        imageLoadTimerRef.current = null;
-      }
-    };
+    const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleSaveToTelegram = useCallback(() => {
