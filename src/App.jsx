@@ -1,6 +1,6 @@
 // App.js - Main component for NFT Gift Planner
 // Optimized for Telegram Mini App - instant loading and smooth performance
-import React, { useState, useEffect, useRef, lazy, Suspense } from 'react';
+import React, { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
 import {
   DndContext,
   closestCenter,
@@ -299,6 +299,9 @@ function App() {
   const [playingAnimations, setPlayingAnimations] = useState({});
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [selectedCell, setSelectedCell] = useState({ row: -1, col: -1 });
+
+  const telegramRef = useRef(null);
 
   // Generate unique IDs for cells
   const cellIds = grid.flat().map((_, index) => `cell-${index}`);
@@ -319,6 +322,23 @@ function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  useEffect(() => {
+    const webApp = window.Telegram?.WebApp;
+    if (!webApp) return;
+
+    webApp.ready();
+    webApp.expand();
+    telegramRef.current = webApp;
+
+    webApp.MainButton.setText('Сохранить');
+    webApp.MainButton.show();
+    webApp.MainButton.onClick(handleSaveToTelegram);
+
+    return () => {
+      webApp.MainButton.offClick(handleSaveToTelegram);
+    };
+  }, [handleSaveToTelegram]);
+
   const loadInitialData = async () => {
     try {
       // Load all required data in PARALLEL for faster startup
@@ -330,9 +350,13 @@ function App() {
       ]);
       
       // Extract values, using fallbacks for any failed requests
-      const giftsData = results[0].status === 'fulfilled' ? results[0].value : [];
+      const giftsRaw = results[0].status === 'fulfilled' ? results[0].value : [];
       const backdropsData = results[1].status === 'fulfilled' ? results[1].value : [];
       const namesData = results[2].status === 'fulfilled' ? results[2].value : {};
+
+      const giftsData = Array.isArray(giftsRaw)
+        ? giftsRaw.map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean)
+        : [];
       
       // Set gifts and backdrops immediately
       setGifts(giftsData);
@@ -432,6 +456,7 @@ function App() {
 
   const openModal = (row, col) => {
     setCurrentCell({ row, col });
+    setSelectedCell({ row, col });
     setModalIsOpen(true);
   };
 
@@ -806,12 +831,72 @@ function App() {
     setRows(prev => prev - 1);
   };
 
+  const handleAddElement = () => {
+    let target = null;
+    for (let r = 0; r < grid.length; r++) {
+      for (let c = 0; c < grid[r].length; c++) {
+        if (!grid[r][c]) {
+          target = { row: r, col: c };
+          break;
+        }
+      }
+      if (target) break;
+    }
+    if (!target) {
+      if (animationMode && rows >= 5) return;
+      const newRowIndex = grid.length;
+      setGrid(prev => [...prev, [null, null, null]]);
+      setRows(prev => prev + 1);
+      target = { row: newRowIndex, col: 0 };
+    }
+    openModal(target.row, target.col);
+  };
+
+  const handleDeleteSelected = () => {
+    if (selectedCell.row < 0 || selectedCell.col < 0) return;
+    setGrid(prev => {
+      const updated = prev.map(row => [...row]);
+      updated[selectedCell.row][selectedCell.col] = null;
+      return updated;
+    });
+    setSelectedCell({ row: -1, col: -1 });
+  };
+
+  const handleSaveToTelegram = useCallback(() => {
+    const payload = {
+      rows,
+      animationMode,
+      grid,
+    };
+    try {
+      window.Telegram?.WebApp?.sendData(JSON.stringify(payload));
+    } catch (error) {
+      console.warn('[handleSaveToTelegram] sendData failed, falling back to console', error);
+      console.log('Payload:', payload);
+    }
+  }, [grid, rows, animationMode]);
+
   if (loading) {
-    return <div className="splash">Загрузка...</div>;
+    return (
+      <div className="splash">
+        <div>
+          <div style={{ marginBottom: '8px' }}>Идет загрузка... Пожалуйста, подождите</div>
+          <a href="https://t.me/NFTPlanChannel" target="_blank" rel="noreferrer" style={{ color: '#6ee7ff' }}>
+            Подписывайтесь на канал @NFTPlanChannel
+          </a>
+        </div>
+      </div>
+    );
   }
 
   return (
     <div className="app">
+      <div className="header-announcement">
+        Подписывайтесь на официальный канал и следите за обновлениями{' '}
+        <a href="https://t.me/NFTPlanChannel" target="_blank" rel="noreferrer">
+          @NFTPlanChannel
+        </a>
+      </div>
       {/* Fixed animation toggle in top-right corner */}
       <div className="animation-toggle-fixed">
         <label className="toggle-switch">
@@ -976,11 +1061,17 @@ function App() {
         
         {/* Bottom action buttons */}
         <div className="bottom-actions">
-          <button className="action-button export-button" onClick={exportGrid}>
+          <button className="action-button export-button" onClick={handleAddElement}>
+            Добавить
+          </button>
+          <button className="action-button clear-button" onClick={handleDeleteSelected} disabled={selectedCell.row < 0}>
+            Удалить
+          </button>
+          <button className="action-button save-button" onClick={handleSaveToTelegram}>
             Сохранить
           </button>
           <button className="action-button clear-button" onClick={resetGrid}>
-            Очистить
+            Полный сброс
           </button>
         </div>
       </div>
@@ -1030,6 +1121,7 @@ const CellModal = ({
   const [model, setModel] = useState('');
   const [backdrop, setBackdrop] = useState(null);
   const [pattern, setPattern] = useState('');
+  const [text, setText] = useState('');
   const [totalIssued, setTotalIssued] = useState(null);
   const [models, setModels] = useState([]);
   const [patterns, setPatterns] = useState([]);
@@ -1045,6 +1137,7 @@ const CellModal = ({
       setModel(initialData?.model || '');
       setBackdrop(initialData?.backdrop || null);
       setPattern(initialData?.pattern || '');
+      setText(initialData?.text || '');
       setTotalIssued(initialData?.totalIssued || null);
       setModels([]);
       setPatterns([]);
@@ -1210,7 +1303,7 @@ const CellModal = ({
   };
 
   const handleSave = () => {
-    onSave({ gift, model, backdrop, pattern, totalIssued });
+    onSave({ gift, model, backdrop, pattern, totalIssued, text });
   };
 
   return (
@@ -1287,12 +1380,19 @@ const CellModal = ({
               ))}
             </select>
 
-            <select value={pattern} onChange={(e) => setPattern(e.target.value)}>
-              <option value="">Выберите паттерн</option>
-              {patterns.map((p) => (
-                <option key={p.name} value={p.name}>{p.name} ({(p.rarityPermille / 10).toFixed(1)}‰)</option>
-              ))}
-            </select>
+        <select value={pattern} onChange={(e) => setPattern(e.target.value)}>
+          <option value="">Выберите паттерн</option>
+          {patterns.map((p) => (
+            <option key={p.name} value={p.name}>{p.name} ({(p.rarityPermille / 10).toFixed(1)}‰)</option>
+          ))}
+        </select>
+
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          placeholder="Добавьте текст"
+          maxLength={50}
+        />
           </>
         )}
 
