@@ -25,9 +25,6 @@ const Modal = lazy(() => import('react-modal').then(module => {
   return { default: module.default };
 }));
 
-// Lazy load html2canvas - only needed when exporting
-const loadHtml2Canvas = () => import('html2canvas');
-
 // Lazy load lottie and pako - only needed for animations
 // Use lottie_canvas variant for smaller bundle (canvas-only, no SVG renderer)
 // This reduces the bundle from ~533KB to ~267KB (70KB gzipped)
@@ -781,17 +778,6 @@ function App() {
 
   const resetGrid = () => {
     setGrid(Array.from({ length: rows }, () => Array(3).fill(null)));
-  };
-
-  const exportGrid = async () => {
-    const gridElement = document.getElementById('grid');
-    // Lazy load html2canvas only when needed
-    const html2canvas = (await loadHtml2Canvas()).default;
-    const canvas = await html2canvas(gridElement);
-    const link = document.createElement('a');
-    link.download = 'nft_grid.png';
-    link.href = canvas.toDataURL();
-    link.click();
   };
 
   // Get the active cell data for overlay
