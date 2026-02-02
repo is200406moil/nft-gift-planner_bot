@@ -262,6 +262,25 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                 )}
               </>
             )}
+            {cell?.text && (
+              <div
+                style={{
+                  position: 'absolute',
+                  bottom: 6,
+                  left: 8,
+                  right: 8,
+                  textAlign: 'center',
+                  color: 'white',
+                  fontWeight: 700,
+                  fontSize: '12px',
+                  textShadow: '0 2px 6px rgba(0,0,0,0.6)',
+                  zIndex: 3,
+                  wordBreak: 'break-word',
+                }}
+              >
+                {cell.text}
+              </div>
+            )}
           </div>
           {/* Uniqueness Ribbon - moved outside overflow:hidden container */}
           {cell?.gift && cell.totalIssued && (
@@ -1270,16 +1289,16 @@ const CellModal = ({
   };
 
   const copyCell = () => {
-    setCopiedCell({ gift, model, backdrop, pattern });
+    setCopiedCell({ gift, model, backdrop, pattern, text });
   };
 
   const pasteCell = () => {
     if (copiedCell) {
-      // When pasting, we want to keep the pasted values, so use isInitialLoad-like behavior
       setGift(copiedCell.gift);
       setModel(copiedCell.model);
       setBackdrop(copiedCell.backdrop);
       setPattern(copiedCell.pattern);
+      setText(copiedCell.text || '');
       setModels([]);
       setPatterns([]);
       if (copiedCell.gift) {
