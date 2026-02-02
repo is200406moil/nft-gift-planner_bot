@@ -226,25 +226,44 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                     model={cell.model}
                     giftId={giftId}
                   />
-                ) : imageUrl && imageLoadReady ? (
-                  <img
-                    src={imageUrl}
-                    alt="gift"
-                    loading="eager"
-                    decoding="async"
-                    onError={(e) => {
-                      console.error('[SortableCell] Image load error:', imageUrl);
-                      e.target.style.display = 'none';
-                    }}
-                    style={{
-                      position: 'absolute',
-                      inset: '10%',
-                      width: '80%',
-                      height: '80%',
-                      objectFit: 'contain',
-                      zIndex: 2,
-                    }}
-                  />
+                ) : imageUrl ? (
+                  imageLoadReady ? (
+                    <img
+                      src={imageUrl}
+                      alt="gift"
+                      loading="eager"
+                      decoding="async"
+                      onError={(e) => {
+                        console.error('[SortableCell] Image load error:', imageUrl);
+                        e.target.style.display = 'none';
+                      }}
+                      style={{
+                        position: 'absolute',
+                        inset: '10%',
+                        width: '80%',
+                        height: '80%',
+                        objectFit: 'contain',
+                        zIndex: 2,
+                      }}
+                    />
+                  ) : (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        inset: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        color: 'rgba(255, 255, 255, 0.7)',
+                        fontSize: '12px',
+                        textAlign: 'center',
+                        zIndex: 2,
+                        textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                      }}
+                    >
+                      Загрузка...
+                    </div>
+                  )
                 ) : (
                   <div
                     style={{
@@ -341,10 +360,10 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || imageLoadReady) return;
     const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
     return () => clearTimeout(timer);
-  }, [loading]);
+  }, [loading, imageLoadReady]);
 
   const handleSaveToTelegram = useCallback(() => {
     const payload = {
@@ -986,7 +1005,24 @@ function App() {
                                 zIndex: 2,
                               }}
                             />
-                          ) : null
+                          ) : (
+                            <div
+                              style={{
+                                position: 'absolute',
+                                inset: 0,
+                                display: 'flex',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                color: 'rgba(255, 255, 255, 0.7)',
+                                fontSize: '12px',
+                                textAlign: 'center',
+                                zIndex: 2,
+                                textShadow: '0 1px 2px rgba(0, 0, 0, 0.5)',
+                              }}
+                            >
+                              Загрузка...
+                            </div>
+                          )
                         ) : cellData?.gift ? (
                           <div
                             style={{
