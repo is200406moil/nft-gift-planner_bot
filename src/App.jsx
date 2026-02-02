@@ -48,6 +48,9 @@ const loadPako = async () => {
 
 const API_BASE = 'https://api.changes.tg';
 const CDN_BASE = 'https://cdn.changes.tg';
+const DEFAULT_GIFT_IMAGE_SIZE = 128;
+const DEFAULT_PATTERN_IMAGE_SIZE = 128;
+const IMAGE_LOAD_DELAY_MS = 800;
 
 // Animation cache for prefetched TGS data
 const animationCache = new Map();
@@ -61,7 +64,7 @@ async function prefetchAnimation(gift, model) {
   
   try {
     const pako = await loadPako();
-    const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+        const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
     const response = await fetch(tgsUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
@@ -97,7 +100,7 @@ function aggressiveNormalize(str) {
  * @param {number} size - Image size (default 256)
  * @returns {string|null} Image URL or null if gift ID not found
  */
-function getGiftImageUrl(gift, model, giftIds, size = 256) {
+function getGiftImageUrl(gift, model, giftIds, size = DEFAULT_GIFT_IMAGE_SIZE) {
   if (!gift) return null;
   
   console.log('[getGiftImageUrl] called', { gift, model });
@@ -131,7 +134,7 @@ function getGiftImageUrl(gift, model, giftIds, size = 256) {
   }
 
   if (giftId) {
-    const url = `${CDN_BASE}/gifts/originals/${giftId}/Original.png`;
+    const url = `${CDN_BASE}/gifts/originals/${giftId}/Original.png?size=${size}`;
     console.log('[getGiftImageUrl] → original URL:', url);
     return url;
   }
@@ -152,7 +155,7 @@ function formatNumber(num) {
 }
 
 // SortableCell component using @dnd-kit
-const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver, giftIds }) => {
+const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver, giftIds, imageLoadReady }) => {
   const {
     attributes,
     listeners,
@@ -227,7 +230,7 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
                   <img
                     src={imageUrl}
                     alt="gift"
-                    loading="eager"
+                    loading={imageLoadReady ? 'eager' : 'lazy'}
                     decoding="async"
                     onError={(e) => {
                       console.error('[SortableCell] Image load error:', imageUrl);
@@ -316,6 +319,7 @@ function App() {
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
   const telegramRef = useRef(null);
+  const [imageLoadReady, setImageLoadReady] = useState(false);
 
   // Generate unique IDs for cells
   const cellIds = grid.flat().map((_, index) => `cell-${index}`);
@@ -334,6 +338,11 @@ function App() {
   useEffect(() => {
     loadInitialData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
+    return () => clearTimeout(timer);
   }, []);
 
   const handleSaveToTelegram = useCallback(() => {
@@ -942,6 +951,7 @@ function App() {
                     onCellClick={openModal}
                     isOver={overId === cellId && activeId !== cellId}
                     giftIds={giftIds}
+                    imageLoadReady={imageLoadReady}
                   />
                 );
               })}
@@ -963,7 +973,7 @@ function App() {
                           <img
                             src={overlayImageUrl}
                             alt="gift"
-                            loading="eager"
+                            loading={imageLoadReady ? 'eager' : 'lazy'}
                             decoding="async"
                             style={{
                               position: 'absolute',
@@ -1386,7 +1396,7 @@ const PatternRings = ({ gift, pattern, cellId }) => {
     const defs = document.createElementNS('http://www.w3.org/2000/svg', 'defs');
     const img = document.createElementNS('http://www.w3.org/2000/svg', 'image');
     img.setAttribute('id', uniqueId);
-    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=256`);
+    img.setAttribute('href', `${API_BASE}/pattern/${normalizeGiftName(gift)}/${pattern}.png?size=${DEFAULT_PATTERN_IMAGE_SIZE}`);
     img.setAttribute('width', '32');
     img.setAttribute('height', '32');
     defs.appendChild(img);
@@ -1511,7 +1521,7 @@ const TgsAnimation = ({ gift, model, giftId }) => {
           // Fallback to PNG
           let fallbackUrl;
           if (model) {
-            fallbackUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=256`;
+            fallbackUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=${DEFAULT_GIFT_IMAGE_SIZE}`;
           } else if (giftId) {
             fallbackUrl = `${CDN_BASE}/gifts/originals/${giftId}/Original.png`;
           }
