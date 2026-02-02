@@ -64,7 +64,7 @@ async function prefetchAnimation(gift, model) {
   
   try {
     const pako = await loadPako();
-        const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
+    const tgsUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.tgs`;
     const response = await fetch(tgsUrl);
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
     
@@ -320,6 +320,7 @@ function App() {
   const [overId, setOverId] = useState(null);
   const telegramRef = useRef(null);
   const [imageLoadReady, setImageLoadReady] = useState(false);
+  const imageLoadTimerRef = useRef(null);
 
   // Generate unique IDs for cells
   const cellIds = grid.flat().map((_, index) => `cell-${index}`);
@@ -341,8 +342,17 @@ function App() {
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
-    return () => clearTimeout(timer);
+    if (imageLoadTimerRef.current) return;
+    imageLoadTimerRef.current = setTimeout(() => {
+      setImageLoadReady(true);
+      imageLoadTimerRef.current = null;
+    }, IMAGE_LOAD_DELAY_MS);
+    return () => {
+      if (imageLoadTimerRef.current) {
+        clearTimeout(imageLoadTimerRef.current);
+        imageLoadTimerRef.current = null;
+      }
+    };
   }, []);
 
   const handleSaveToTelegram = useCallback(() => {
@@ -1523,7 +1533,7 @@ const TgsAnimation = ({ gift, model, giftId }) => {
           if (model) {
             fallbackUrl = `${API_BASE}/model/${normalizeGiftName(gift)}/${model}.png?size=${DEFAULT_GIFT_IMAGE_SIZE}`;
           } else if (giftId) {
-            fallbackUrl = `${CDN_BASE}/gifts/originals/${giftId}/Original.png`;
+            fallbackUrl = `${CDN_BASE}/gifts/originals/${giftId}/Original.png?size=${DEFAULT_GIFT_IMAGE_SIZE}`;
           }
           
           if (fallbackUrl) {
