@@ -97,7 +97,7 @@ function aggressiveNormalize(str) {
  * @param {string} gift - Gift name (e.g., "Santa Hat")
  * @param {string|null} model - Model name if upgraded, null/empty if not
  * @param {Object} giftIds - Map of gift names (normalized variants) to gift IDs
- * @param {number} size - Image size (default 256)
+ * @param {number} size - Image size (default 128)
  * @returns {string|null} Image URL or null if gift ID not found
  */
 function getGiftImageUrl(gift, model, giftIds, size = DEFAULT_GIFT_IMAGE_SIZE) {
@@ -337,12 +337,9 @@ function App() {
 
   useEffect(() => {
     loadInitialData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
     return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const handleSaveToTelegram = useCallback(() => {
