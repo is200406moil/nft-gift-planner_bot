@@ -315,8 +315,6 @@ function App() {
   const [playingAnimations, setPlayingAnimations] = useState({});
   const [activeId, setActiveId] = useState(null);
   const [overId, setOverId] = useState(null);
-  const [selectedCell, setSelectedCell] = useState({ row: -1, col: -1 });
-
   const telegramRef = useRef(null);
 
   // Generate unique IDs for cells
@@ -486,7 +484,6 @@ function App() {
 
   const openModal = (row, col) => {
     setCurrentCell({ row, col });
-    setSelectedCell({ row, col });
     setModalIsOpen(true);
   };
 
@@ -850,37 +847,6 @@ function App() {
     setRows(prev => prev - 1);
   };
 
-  const handleAddElement = () => {
-    let target = null;
-    for (let r = 0; r < grid.length; r++) {
-      for (let c = 0; c < grid[r].length; c++) {
-        if (!grid[r][c]) {
-          target = { row: r, col: c };
-          break;
-        }
-      }
-      if (target) break;
-    }
-    if (!target) {
-      if (animationMode && rows >= 5) return;
-      const newRowIndex = grid.length;
-      setGrid(prev => [...prev, [null, null, null]]);
-      setRows(prev => prev + 1);
-      target = { row: newRowIndex, col: 0 };
-    }
-    openModal(target.row, target.col);
-  };
-
-  const handleDeleteSelected = () => {
-    if (selectedCell.row < 0 || selectedCell.col < 0) return;
-    setGrid(prev => {
-      const updated = prev.map(row => [...row]);
-      updated[selectedCell.row][selectedCell.col] = null;
-      return updated;
-    });
-    setSelectedCell({ row: -1, col: -1 });
-  };
-
   if (loading) {
     return (
       <div className="splash">
@@ -1066,12 +1032,6 @@ function App() {
         
         {/* Bottom action buttons */}
         <div className="bottom-actions">
-          <button className="action-button export-button" onClick={handleAddElement}>
-            Добавить
-          </button>
-          <button className="action-button clear-button" onClick={handleDeleteSelected} disabled={selectedCell.row < 0}>
-            Удалить
-          </button>
           <button className="action-button save-button" onClick={handleSaveToTelegram}>
             Сохранить
           </button>
