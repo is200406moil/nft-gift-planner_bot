@@ -357,8 +357,12 @@ const fetchCdnEndpoint = async (endpoint) => {
   if (endpoint === '/gifts') {
     // Extract gift names from id→name object
     return Object.values(data);
-  } else if (endpoint === '/names') {
+  } else if (endpoint === '/names' || endpoint === '/ids') {
     // Invert id→name to name→id for compatibility
+    // Both endpoints use the same CDN file and need the same transformation
+    // Note: If multiple IDs have the same name, only the last ID is kept
+    // This matches the original API behavior and is handled by the app's
+    // normalized lookup logic which stores multiple variants per gift
     const nameToId = {};
     for (const [id, name] of Object.entries(data)) {
       nameToId[name] = id;
