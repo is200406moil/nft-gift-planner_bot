@@ -325,31 +325,20 @@ const SortableCell = React.memo(({ id, cell, rowIndex, colIndex, isPlaying, anim
 
 // API fetching functions for TanStack Query
 // These functions will be cached and reused automatically
+// Retry logic is handled by TanStack Query configuration
 const fetchApiEndpoint = async (endpoint) => {
-  const maxRetries = 3;
-  for (let attempt = 1; attempt <= maxRetries; attempt++) {
-    try {
-      const response = await fetch(`${API_BASE}${endpoint}`, {
-        cache: 'no-store',
-        mode: 'cors',
-        headers: {
-          'Connection': 'close',
-          'User-Agent': 'NFT-Gift-Planner/1.0'
-        }
-      });
-      
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      
-      const data = await response.json();
-      return data;
-    } catch (error) {
-      console.warn(`Attempt ${attempt}/${maxRetries} failed for ${endpoint}:`, error);
-      if (attempt === maxRetries) {
-        throw error; // Let React Query handle the error
-      }
-      await new Promise(r => setTimeout(r, 800 * attempt)); // exponential backoff
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    cache: 'no-store',
+    mode: 'cors',
+    headers: {
+      'Connection': 'close',
+      'User-Agent': 'NFT-Gift-Planner/1.0'
     }
-  }
+  });
+  
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  
+  return await response.json();
 };
 
 function App() {
@@ -393,12 +382,14 @@ function App() {
   const { data: idsData = {} } = useQuery({
     queryKey: ['ids'],
     queryFn: () => fetchApiEndpoint('/ids'),
-    enabled: false, // Only fetch if needed (when namesData is not name->id format)
+    // This query is only needed as fallback when namesData is not in name->id format
+    enabled: !!namesData && Object.keys(namesData).length > 0 && 
+             !(typeof Object.values(namesData)[0] === 'string' && /^\d+$/.test(Object.values(namesData)[0])),
     staleTime: 5 * 60 * 1000,
   });
 
-  // Compute loading state based on query statuses
-  const loading = isLoadingGifts || isLoadingBackdrops || isLoadingNames || gifts.length === 0;
+  // Compute loading state based on query statuses only
+  const loading = isLoadingGifts || isLoadingBackdrops || isLoadingNames;
 
   // Generate unique IDs for cells
   const cellIds = grid.flat().map((_, index) => `cell-${index}`);
@@ -518,21 +509,21 @@ function App() {
     setGiftIds(normalizedNameToId);
   }, [giftsData, backdropsData, namesData, idsData, isLoadingGifts, isLoadingBackdrops, isLoadingNames]);
 
-  const openModal = (row, col) => {
+  const openModal = useCallback((row, col) => {
     setCurrentCell({ row, col });
     setModalIsOpen(true);
-  };
+  }, []);
 
-  const closeModal = () => {
+  const closeModal = useCallback(() => {
     setModalIsOpen(false);
-  };
+  }, []);
 
-  const saveCell = (cellData) => {
+  const saveCell = useCallback((cellData) => {
     const newGrid = [...grid];
     newGrid[currentCell.row][currentCell.col] = cellData;
     setGrid(newGrid);
     closeModal();
-  };
+  }, [grid, currentCell, closeModal]);
 
   // Simple fetch wrapper for models and patterns
   const safeFetch = async (endpoint, fallback = []) => {
