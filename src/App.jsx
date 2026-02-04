@@ -379,12 +379,16 @@ function App() {
     staleTime: 5 * 60 * 1000,
   });
 
+  // Check if namesData is in the expected name->id format
+  const namesIsNameToId = Object.keys(namesData).length > 0 && 
+                          typeof Object.values(namesData)[0] === 'string' && 
+                          /^\d+$/.test(Object.values(namesData)[0]);
+
   const { data: idsData = {} } = useQuery({
     queryKey: ['ids'],
     queryFn: () => fetchApiEndpoint('/ids'),
     // This query is only needed as fallback when namesData is not in name->id format
-    enabled: !!namesData && Object.keys(namesData).length > 0 && 
-             !(typeof Object.values(namesData)[0] === 'string' && /^\d+$/.test(Object.values(namesData)[0])),
+    enabled: Object.keys(namesData).length > 0 && !namesIsNameToId,
     staleTime: 5 * 60 * 1000,
   });
 
