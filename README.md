@@ -11,21 +11,24 @@ This app is optimized for Telegram Mini Apps with the following techniques:
 - **Lighter Lottie**: Uses `lottie_canvas` variant (267KB) instead of full bundle (533KB) - 50% smaller
 - **Lazy Loading**: Modal, Lottie animations, and html2canvas are loaded only when needed
 - **Tree Shaking**: Unused code is removed during production build
+- **React.memo**: Components are memoized to prevent unnecessary re-renders
 
 ### Loading Performance
 - **Critical CSS**: Inlined in HTML for instant visual feedback
 - **Preconnect hints**: DNS prefetch for API endpoints
 - **Telegram SDK**: Loaded first for instant Mini App initialization
-- **Session caching**: API responses cached in sessionStorage
+- **TanStack Query**: API responses cached with smart invalidation for instant subsequent loads
+- **API Proxying**: Vercel rewrites for faster API routing through CDN
 
 ### Telegram Mini App Specifics
 - **Instant ready()**: Called after initial render for responsive app feel
 - **Theme integration**: Uses Telegram theme colors via CSS variables
 - **Mobile optimizations**: Touch-friendly, no pull-to-refresh conflicts
 
-### Caching (Vercel)
+### Caching Strategy
 - **Immutable assets**: JS/CSS cached for 1 year with hashed filenames
 - **No-cache HTML**: index.html always revalidates for fresh builds
+- **React Query**: Automatic caching of API responses for 5 minutes with background revalidation
 
 ## Development
 
@@ -67,4 +70,5 @@ Total initial load (excluding lazy chunks): ~85KB gzipped
 - **Vite 7**: Fast build tool with optimized production builds
 - **@dnd-kit**: Accessible drag-and-drop
 - **lottie-web**: TGS/Lottie animation playback
+- **@tanstack/react-query**: Smart data fetching and caching
 - **Vercel**: Serverless deployment with CDN
