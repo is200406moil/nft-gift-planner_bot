@@ -3,6 +3,12 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "installCommand": "npm install",
+  "rewrites": [
+    {
+      "source": "/api/changes/:path*",
+      "destination": "https://api.changes.tg/:path*"
+    }
+  ],
   "headers": [
     {
       "source": "/api/(.*)",

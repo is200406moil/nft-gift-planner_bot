@@ -1,6 +1,7 @@
 // App.js - Main component for NFT Gift Planner
 // Optimized for Telegram Mini App - instant loading and smooth performance
 import React, { useState, useEffect, useRef, lazy, Suspense, useCallback } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import {
   DndContext,
   closestCenter,
@@ -155,7 +156,8 @@ function formatNumber(num) {
 }
 
 // SortableCell component using @dnd-kit
-const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver, giftIds, imageLoadReady }) => {
+// Memoized to prevent unnecessary re-renders when other cells change
+const SortableCell = React.memo(({ id, cell, rowIndex, colIndex, isPlaying, animationMode, onCellClick, isOver, giftIds, imageLoadReady }) => {
   const {
     attributes,
     listeners,
@@ -319,12 +321,40 @@ const SortableCell = ({ id, cell, rowIndex, colIndex, isPlaying, animationMode, 
       )}
     </div>
   );
+});
+
+// API fetching functions for TanStack Query
+// These functions will be cached and reused automatically
+const fetchApiEndpoint = async (endpoint) => {
+  const maxRetries = 3;
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        cache: 'no-store',
+        mode: 'cors',
+        headers: {
+          'Connection': 'close',
+          'User-Agent': 'NFT-Gift-Planner/1.0'
+        }
+      });
+      
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      const data = await response.json();
+      return data;
+    } catch (error) {
+      console.warn(`Attempt ${attempt}/${maxRetries} failed for ${endpoint}:`, error);
+      if (attempt === maxRetries) {
+        throw error; // Let React Query handle the error
+      }
+      await new Promise(r => setTimeout(r, 800 * attempt)); // exponential backoff
+    }
+  }
 };
 
 function App() {
   const [rows, setRows] = useState(3); // Start with 3 rows
   const [grid, setGrid] = useState(Array.from({ length: 3 }, () => Array(3).fill(null))); // null for empty cells
-  const [loading, setLoading] = useState(true);
   const [gifts, setGifts] = useState([]);
   const [backdrops, setBackdrops] = useState([]);
   const [giftIds, setGiftIds] = useState({}); // Map of gift name -> gift ID for /original endpoint
@@ -340,6 +370,36 @@ function App() {
   const telegramRef = useRef(null);
   const [imageLoadReady, setImageLoadReady] = useState(false);
 
+  // TanStack Query hooks for API data with automatic caching
+  // Data is cached for 5 minutes and reused instantly on subsequent loads
+  const { data: giftsData = [], isLoading: isLoadingGifts } = useQuery({
+    queryKey: ['gifts'],
+    queryFn: () => fetchApiEndpoint('/gifts'),
+    staleTime: 5 * 60 * 1000, // 5 minutes
+  });
+
+  const { data: backdropsData = [], isLoading: isLoadingBackdrops } = useQuery({
+    queryKey: ['backdrops'],
+    queryFn: () => fetchApiEndpoint('/backdrops'),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: namesData = {}, isLoading: isLoadingNames } = useQuery({
+    queryKey: ['names'],
+    queryFn: () => fetchApiEndpoint('/names'),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const { data: idsData = {} } = useQuery({
+    queryKey: ['ids'],
+    queryFn: () => fetchApiEndpoint('/ids'),
+    enabled: false, // Only fetch if needed (when namesData is not name->id format)
+    staleTime: 5 * 60 * 1000,
+  });
+
+  // Compute loading state based on query statuses
+  const loading = isLoadingGifts || isLoadingBackdrops || isLoadingNames || gifts.length === 0;
+
   // Generate unique IDs for cells
   const cellIds = grid.flat().map((_, index) => `cell-${index}`);
 
@@ -354,11 +414,7 @@ function App() {
     })
   );
 
-  useEffect(() => {
-    loadInitialData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
+  // Image loading delay effect
   useEffect(() => {
     if (loading || imageLoadReady) return;
     const timer = setTimeout(() => setImageLoadReady(true), IMAGE_LOAD_DELAY_MS);
@@ -396,120 +452,71 @@ function App() {
     };
   }, [handleSaveToTelegram]);
 
-  const loadInitialData = async () => {
-    try {
-      // Load all required data in PARALLEL for faster startup
-      // Use Promise.allSettled to handle partial failures gracefully
-      const results = await Promise.allSettled([
-        safeFetch('/gifts', []),
-        safeFetch('/backdrops', []),
-        safeFetch('/names', {})
-      ]);
-      
-      // Extract values, using fallbacks for any failed requests
-      const giftsRaw = results[0].status === 'fulfilled' ? results[0].value : [];
-      const backdropsData = results[1].status === 'fulfilled' ? results[1].value : [];
-      const namesData = results[2].status === 'fulfilled' ? results[2].value : {};
+  // Process the API data from React Query when it's available
+  useEffect(() => {
+    // Skip processing if data is still loading
+    if (isLoadingGifts || isLoadingBackdrops || isLoadingNames) {
+      return;
+    }
 
-      const giftsData = Array.isArray(giftsRaw)
-        ? giftsRaw.map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean)
-        : [];
+    // Process gifts data
+    const processedGifts = Array.isArray(giftsData)
+      ? giftsData.map((g) => (typeof g === 'string' ? g : g?.name)).filter(Boolean)
+      : [];
+    
+    setGifts(processedGifts);
+    setBackdrops(backdropsData);
+    
+    console.log('[processData] /names sample entries:', Object.entries(namesData).slice(0, 3));
+    
+    // Check if namesData looks like name → id (values should be numeric string IDs)
+    const firstValue = Object.values(namesData)[0];
+    const looksLikeNameToId = typeof firstValue === 'string' && /^\d+$/.test(firstValue);
+    console.log('[processData] /names looks like name→id:', looksLikeNameToId);
+    
+    let nameToId = {};
+    
+    if (looksLikeNameToId) {
+      // /names is already name → id
+      nameToId = namesData;
+      console.log('[processData] Using /names directly as name→id');
+    } else if (Object.keys(idsData).length > 0) {
+      // /names might be id → name (same as /ids), need to invert
+      console.log('[processData] /ids sample entries:', Object.entries(idsData).slice(0, 3));
       
-      // Set gifts and backdrops immediately
-      setGifts(giftsData);
-      setBackdrops(backdropsData);
-      
-      console.log('[loadInitialData] /names sample entries:', Object.entries(namesData).slice(0, 3));
-      
-      // Check if namesData looks like name → id (values should be numeric string IDs)
-      const firstValue = Object.values(namesData)[0];
-      const looksLikeNameToId = typeof firstValue === 'string' && /^\d+$/.test(firstValue);
-      console.log('[loadInitialData] /names looks like name→id:', looksLikeNameToId);
-      
-      let nameToId = {};
-      
-      if (looksLikeNameToId) {
-        // /names is already name → id
-        nameToId = namesData;
-        console.log('[loadInitialData] Using /names directly as name→id');
-      } else {
-        // /names might be id → name (same as /ids), need to invert
-        // Or fetch /ids and invert it
-        const idsData = await safeFetch('/ids', {});
-        console.log('[loadInitialData] /ids sample entries:', Object.entries(idsData).slice(0, 3));
-        
-        // /ids is id → name, we need name → id
-        for (const [id, name] of Object.entries(idsData)) {
-          if (typeof name !== 'string') continue;
-          nameToId[name] = id;
-        }
-        console.log('[loadInitialData] Inverted /ids to name→id');
-      }
-      
-      // Now normalize the keys for flexible lookup
-      const normalizedNameToId = {};
-      for (const [name, id] of Object.entries(nameToId)) {
+      // /ids is id → name, we need name → id
+      for (const [id, name] of Object.entries(idsData)) {
         if (typeof name !== 'string') continue;
-        
-        // Store multiple variants of each name for flexible matching
-        const variants = [
-          name,                                    // Original: "Santa Hat"
-          name.toLowerCase(),                      // Lowercase: "santa hat"
-          normalizeGiftName(name),                 // Dashed: "santa-hat"
-          aggressiveNormalize(name),               // Aggressive: "santahat"
-          name.replace(/ /g, ''),                  // No spaces: "SantaHat"
-          name.toLowerCase().replace(/ /g, '_'),   // Underscored: "santa_hat"
-        ];
-        
-        for (const variant of variants) {
-          normalizedNameToId[variant] = id;
-        }
+        nameToId[name] = id;
       }
+      console.log('[processData] Inverted /ids to name→id');
+    }
+    
+    // Now normalize the keys for flexible lookup
+    const normalizedNameToId = {};
+    for (const [name, id] of Object.entries(nameToId)) {
+      if (typeof name !== 'string') continue;
       
-      console.log('[loadInitialData] Normalized nameToId count:', Object.keys(normalizedNameToId).length);
-      console.log('[loadInitialData] Sample nameToId entries:', 
-        Object.entries(normalizedNameToId).slice(0, 8).map(([k, v]) => `${k} → ${v}`));
-      setGiftIds(normalizedNameToId);
-
-      setLoading(false);
-    } catch {
-      setLoading(false);
-    }
-  };
-
-  const safeFetch = async (endpoint, fallback = []) => {
-    const cacheKey = endpoint.replace(/[^a-zA-Z0-9]/g, '_');
-    const cached = sessionStorage.getItem(cacheKey);
-    if (cached) return JSON.parse(cached);
-  
-    const maxRetries = 3;
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const response = await fetch(`${API_BASE}${endpoint}`, {
-          cache: 'no-store',
-          mode: 'cors',
-          headers: {
-            'Connection': 'close',
-            'User-Agent': 'NFT-Gift-Planner/1.0'
-          }
-        });
-  
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-  
-        const data = await response.json();
-        sessionStorage.setItem(cacheKey, JSON.stringify(data));
-        return data;
-      } catch (error) {
-        console.warn(`Attempt ${attempt}/${maxRetries} failed for ${endpoint}:`, error);
-        if (attempt === maxRetries) {
-          console.error(`Using fallback for ${endpoint}`);
-          return fallback;
-        }
-        await new Promise(r => setTimeout(r, 800 * attempt)); // backoff
+      // Store multiple variants of each name for flexible matching
+      const variants = [
+        name,                                    // Original: "Santa Hat"
+        name.toLowerCase(),                      // Lowercase: "santa hat"
+        normalizeGiftName(name),                 // Dashed: "santa-hat"
+        aggressiveNormalize(name),               // Aggressive: "santahat"
+        name.replace(/ /g, ''),                  // No spaces: "SantaHat"
+        name.toLowerCase().replace(/ /g, '_'),   // Underscored: "santa_hat"
+      ];
+      
+      for (const variant of variants) {
+        normalizedNameToId[variant] = id;
       }
     }
-    return fallback;
-  };
+    
+    console.log('[processData] Normalized nameToId count:', Object.keys(normalizedNameToId).length);
+    console.log('[processData] Sample nameToId entries:', 
+      Object.entries(normalizedNameToId).slice(0, 8).map(([k, v]) => `${k} → ${v}`));
+    setGiftIds(normalizedNameToId);
+  }, [giftsData, backdropsData, namesData, idsData, isLoadingGifts, isLoadingBackdrops, isLoadingNames]);
 
   const openModal = (row, col) => {
     setCurrentCell({ row, col });
@@ -525,6 +532,23 @@ function App() {
     newGrid[currentCell.row][currentCell.col] = cellData;
     setGrid(newGrid);
     closeModal();
+  };
+
+  // Simple fetch wrapper for models and patterns
+  const safeFetch = async (endpoint, fallback = []) => {
+    try {
+      const response = await fetch(`${API_BASE}${endpoint}`, {
+        cache: 'no-store',
+        mode: 'cors',
+      });
+      
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      
+      return await response.json();
+    } catch (error) {
+      console.warn(`Failed to fetch ${endpoint}:`, error);
+      return fallback;
+    }
   };
 
   const parseLink = (link) => {
@@ -1419,7 +1443,9 @@ const CellModal = ({
   );
 };
 
-const PatternRings = ({ gift, pattern, cellId }) => {
+// PatternRings component - renders pattern symbols in rings
+// Memoized to prevent unnecessary re-renders
+const PatternRings = React.memo(({ gift, pattern, cellId }) => {
   const svgRef = useRef(null);
   const uniqueId = `pattern-symbol-${cellId}`;
 
@@ -1481,9 +1507,11 @@ const PatternRings = ({ gift, pattern, cellId }) => {
       }}
     />
   );
-};
+});
 
-const TgsAnimation = ({ gift, model, giftId }) => {
+// TgsAnimation component - renders Lottie/TGS animations
+// Memoized to prevent unnecessary re-renders
+const TgsAnimation = React.memo(({ gift, model, giftId }) => {
   const containerRef = useRef(null);
   const animationRef = useRef(null);
 
@@ -1601,6 +1629,6 @@ const TgsAnimation = ({ gift, model, giftId }) => {
       }}
     />
   );
-};
+});
 
 export default App;
