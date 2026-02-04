@@ -323,11 +323,24 @@ const SortableCell = React.memo(({ id, cell, rowIndex, colIndex, isPlaying, anim
   );
 });
 
-// API fetching functions for TanStack Query
-// These functions will be cached and reused automatically
+// CDN fetching functions for TanStack Query
+// Using CDN for better performance - cached globally, lower latency
 // Retry logic is handled by TanStack Query configuration
-const fetchApiEndpoint = async (endpoint) => {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+const fetchCdnEndpoint = async (endpoint) => {
+  // Map API endpoints to CDN file paths
+  const cdnPathMap = {
+    '/gifts': '/gifts/id-to-name.json',       // CDN has id→name, we'll extract values
+    '/backdrops': '/gifts/backdrops.json',
+    '/names': '/gifts/id-to-name.json',       // CDN has id→name, we'll invert to name→id
+    '/ids': '/gifts/id-to-name.json',         // Same as /names on CDN
+  };
+  
+  const cdnPath = cdnPathMap[endpoint];
+  if (!cdnPath) {
+    throw new Error(`No CDN mapping for endpoint: ${endpoint}`);
+  }
+  
+  const response = await fetch(`${CDN_BASE}${cdnPath}`, {
     cache: 'no-store',
     mode: 'cors',
     headers: {
@@ -338,7 +351,22 @@ const fetchApiEndpoint = async (endpoint) => {
   
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   
-  return await response.json();
+  const data = await response.json();
+  
+  // Transform data based on endpoint
+  if (endpoint === '/gifts') {
+    // Extract gift names from id→name object
+    return Object.values(data);
+  } else if (endpoint === '/names') {
+    // Invert id→name to name→id for compatibility
+    const nameToId = {};
+    for (const [id, name] of Object.entries(data)) {
+      nameToId[name] = id;
+    }
+    return nameToId;
+  }
+  
+  return data;
 };
 
 function App() {
@@ -359,23 +387,24 @@ function App() {
   const telegramRef = useRef(null);
   const [imageLoadReady, setImageLoadReady] = useState(false);
 
-  // TanStack Query hooks for API data with automatic caching
+  // TanStack Query hooks for CDN data with automatic caching
   // Data is cached for 5 minutes and reused instantly on subsequent loads
+  // Using CDN for better performance (caching, lower latency)
   const { data: giftsData = [], isLoading: isLoadingGifts } = useQuery({
     queryKey: ['gifts'],
-    queryFn: () => fetchApiEndpoint('/gifts'),
+    queryFn: () => fetchCdnEndpoint('/gifts'),
     staleTime: 5 * 60 * 1000, // 5 minutes
   });
 
   const { data: backdropsData = [], isLoading: isLoadingBackdrops } = useQuery({
     queryKey: ['backdrops'],
-    queryFn: () => fetchApiEndpoint('/backdrops'),
+    queryFn: () => fetchCdnEndpoint('/backdrops'),
     staleTime: 5 * 60 * 1000,
   });
 
   const { data: namesData = {}, isLoading: isLoadingNames } = useQuery({
     queryKey: ['names'],
-    queryFn: () => fetchApiEndpoint('/names'),
+    queryFn: () => fetchCdnEndpoint('/names'),
     staleTime: 5 * 60 * 1000,
   });
 
@@ -386,7 +415,7 @@ function App() {
 
   const { data: idsData = {} } = useQuery({
     queryKey: ['ids'],
-    queryFn: () => fetchApiEndpoint('/ids'),
+    queryFn: () => fetchCdnEndpoint('/ids'),
     // This query is only needed as fallback when namesData is not in name->id format
     enabled: Object.keys(namesData).length > 0 && !namesIsNameToId,
     staleTime: 5 * 60 * 1000,
